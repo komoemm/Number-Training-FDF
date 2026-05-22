@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, auth, isFirebaseActive, handleFirestoreError, OperationType } from './firebase';
 import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, setDoc, getDocs, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { generateDataset, renderReceiptToDataUrl } from './utils/receiptGenerator';
 import { GeneratedInvoiceData, TypingDetail, TestSession } from './types';
 import InvoiceViewer from './components/InvoiceViewer';
@@ -83,7 +83,7 @@ export default function App() {
     setRefreshTrigger(prev => prev + 1);
   };
 
-  const handleCreateTraineeUser = (e: React.FormEvent) => {
+  const handleCreateTraineeUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setUserCreationError(null);
     setUserCreationSuccess(null);
@@ -117,18 +117,37 @@ export default function App() {
     };
 
     setLocalUsers(prev => [...prev, newUser]);
+
+    if (isFirebaseActive && db) {
+      try {
+        await setDoc(doc(db, 'sandbox_users', unameLower), newUser);
+      } catch (err) {
+        console.error('Failed to sync profile to cloud database:', err);
+      }
+    }
+
     setNewTraineeUsername('');
     setNewTraineePassword('');
     setUserCreationSuccess(`Successfully created trainee operator account: "${uname}".`);
   };
 
-  const handleDeleteTraineeUser = (uname: string) => {
+  const handleDeleteTraineeUser = async (uname: string) => {
     if (uname.toLowerCase() === 'admin') {
       alert('The root system admin account is permanent.');
       return;
     }
     if (confirm(`Are you sure you want to delete trainee operator account "${uname}"?`)) {
-      setLocalUsers(prev => prev.filter(u => u.username.toLowerCase() !== uname.toLowerCase()));
+      const unameLower = uname.toLowerCase();
+      setLocalUsers(prev => prev.filter(u => u.username.toLowerCase() !== unameLower));
+      
+      if (isFirebaseActive && db) {
+        try {
+          await deleteDoc(doc(db, 'sandbox_users', unameLower));
+        } catch (err) {
+          console.error('Failed to delete profile from cloud database:', err);
+        }
+      }
+
       setUserCreationSuccess(`Removed trainee operator: "${uname}".`);
     }
   };
@@ -181,18 +200,53 @@ export default function App() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [cheatTriggerMsg, setCheatTriggerMsg] = useState<string | null>(null);
 
+  const fetchSandboxUsers = async () => {
+    if (isFirebaseActive && db) {
+      try {
+        const querySnapshot = await getDocs(collection(db, 'sandbox_users'));
+        const users: any[] = [];
+        querySnapshot.forEach((doc) => {
+          users.push(doc.data());
+        });
+        
+        if (users.length > 0) {
+          setLocalUsers(users);
+        } else {
+          // If no users in Firestore, seed standard admin and guest accounts!
+          const defaultUsers = [
+            { username: 'admin', passwordText: 'admin', role: 'admin', createdAt: '2026-05-22' },
+            { username: 'guest', passwordText: 'guest', role: 'trainee', createdAt: '2026-05-22' }
+          ];
+          for (const u of defaultUsers) {
+            await setDoc(doc(db, 'sandbox_users', u.username), u);
+          }
+          setLocalUsers(defaultUsers);
+        }
+      } catch (err) {
+        console.error('Failed to load sandbox users from Firestore:', err);
+      }
+    }
+  };
+
   // Listen to Firebase Authenticated user states
   useEffect(() => {
     if (isFirebaseActive && auth) {
-      const unsubscribe = onAuthStateChanged(auth, (user) => {
-        setCurrentUser(user);
-        setAuthLoading(false);
+      const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        if (!user) {
+          setCurrentUser(null);
+          setAuthLoading(false);
+          fetchSandboxUsers();
+        } else {
+          setCurrentUser(user);
+          setAuthLoading(false);
+          fetchSandboxUsers();
+        }
       });
       return unsubscribe;
     } else {
       setAuthLoading(false);
     }
-  }, []);
+  }, [refreshTrigger]);
 
   // Sync state loops to increment active item chronometer clock
   useEffect(() => {

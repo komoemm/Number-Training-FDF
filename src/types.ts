@@ -14,6 +14,7 @@ export interface TypingDetail {
 }
 
 export interface TestSession {
+  id?: string;
   userId: string;
   timestamp: Date | Timestamp | string;
   totalImagesAttempted: number;

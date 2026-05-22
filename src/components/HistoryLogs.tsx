@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, doc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, isFirebaseActive } from '../firebase';
 import { Clock, RefreshCw, Layers, Database, ChevronDown, ChevronUp, CheckCircle, XCircle, Trash2, Filter } from 'lucide-react';
 import { TestSession, TypingDetail } from '../types';
@@ -32,19 +32,17 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
     let fetchedSessions: TestSession[] = [];
 
     // 1. Fetch from Firestore if Firebase configurations are active
-    if (isFirebaseActive && db && userId && userId !== 'sandbox_guest_uid' && !isAdmin) {
+    if (isFirebaseActive && db && userId && userId !== 'sandbox_guest_uid') {
       const path = 'test_sessions';
       try {
-        const queryRef = query(
-          collection(db, path),
-          where('userId', '==', userId),
-          orderBy('timestamp', 'desc'),
-          limit(30)
-        );
+        const queryRef = isAdmin
+          ? query(collection(db, path), orderBy('timestamp', 'desc'), limit(100))
+          : query(collection(db, path), where('userId', '==', userId), orderBy('timestamp', 'desc'), limit(30));
+
         const snapshot = await getDocs(queryRef);
         
-        snapshot.forEach((doc) => {
-          const data = doc.data();
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
           let timestampDate: Date;
           if (data.timestamp && typeof data.timestamp.toDate === 'function') {
             timestampDate = data.timestamp.toDate();
@@ -55,6 +53,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
           }
 
           fetchedSessions.push({
+            id: docSnap.id,
             userId: data.userId || 'unknown',
             timestamp: timestampDate,
             totalImagesAttempted: data.totalImagesAttempted,
@@ -101,19 +100,31 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
     setLoading(false);
   };
 
-  const handleDeleteSession = (timestampToDelete: any) => {
+  const handleDeleteSession = async (timestampToDelete: any, docId?: string) => {
     if (!isAdmin) return;
+    
+    // Delete from Firestore if docId exists
+    if (isFirebaseActive && db && docId) {
+      try {
+        await deleteDoc(doc(db, 'test_sessions', docId));
+      } catch (err) {
+        console.error('Failed to delete performance record from cloud database:', err);
+      }
+    }
+
+    // Delete from local storage fallbacks as well
     try {
       const localData = localStorage.getItem('local_test_sessions');
       if (localData) {
         const parsed = JSON.parse(localData);
         const filtered = parsed.filter((s: any) => s.timestamp !== timestampToDelete);
         localStorage.setItem('local_test_sessions', JSON.stringify(filtered));
-        fetchSessionHistory();
       }
     } catch (err) {
-      console.error('Failed deleting log:', err);
+      console.error('Failed deleting local log backup:', err);
     }
+
+    fetchSessionHistory();
   };
 
   const toggleExpandSession = (index: number) => {
@@ -254,7 +265,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                             onClick={(e) => {
                               e.stopPropagation();
                               if (confirm(`Delete speed report of ${session.userId}?`)) {
-                                handleDeleteSession(session.timestamp);
+                                handleDeleteSession(session.timestamp, session.id);
                               }
                             }}
                             className="p-1 px-1.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"

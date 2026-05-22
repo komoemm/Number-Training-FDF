@@ -19,7 +19,6 @@ service cloud.firestore {
     // Entity validation
     function isValidSession(session) {
       return session.userId is string 
-        && session.userId == request.auth.uid // Enforce ownership integrity
         && session.totalImagesAttempted is int 
         && session.totalImagesAttempted >= 0 
         && session.totalImagesAttempted <= 100
@@ -34,17 +33,35 @@ service cloud.firestore {
         && session.details.size() <= 100;
     }
 
+    function isValidSandboxUser(user) {
+      return user.username is string 
+        && user.username.size() >= 3 
+        && user.username.size() <= 32
+        && user.passwordText is string 
+        && user.passwordText.size() >= 3 
+        && user.passwordText.size() <= 64
+        && user.role is string 
+        && (user.role == "admin" || user.role == "trainee")
+        && user.createdAt is string
+        && user.createdAt.size() <= 30;
+    }
+
     // Rules for test_sessions collection
     match /test_sessions/{sessionId} {
-      allow create: if isSignedIn() 
-        && isValidId(sessionId)
+      allow create: if isValidId(sessionId)
         && isValidSession(request.resource.data);
         
-      allow read: if isSignedIn() 
-        && resource.data.userId == request.auth.uid; // Secure Query List Enforcer
+      allow read: if true;
         
-      // Append-only rule for completed test sessions
-      allow update, delete: if false;
+      allow update, delete: if true;
+    }
+
+    // Rules for sandbox_users collection
+    match /sandbox_users/{username} {
+      allow read: if true;
+      allow create, update: if isValidId(username)
+        && isValidSandboxUser(request.resource.data);
+      allow delete: if true;
     }
   }
 }

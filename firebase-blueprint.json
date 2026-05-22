@@ -39,12 +39,46 @@
         "averageTimeMs",
         "details"
       ]
+    },
+    "sandbox_user": {
+      "title": "SandboxUser",
+      "description": "Custom trainee or administrator operator account profile.",
+      "type": "object",
+      "properties": {
+        "username": {
+          "type": "string",
+          "description": "Unique identifier / username of the operator."
+        },
+        "passwordText": {
+          "type": "string",
+          "description": "Access key of the operator."
+        },
+        "role": {
+          "type": "string",
+          "description": "Assigned access role in the workstation.",
+          "enum": ["admin", "trainee"]
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Record creation date string."
+        }
+      },
+      "required": [
+        "username",
+        "passwordText",
+        "role",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
     "/test_sessions/{sessionId}": {
       "schema": "test_session",
       "description": "Speed and accuracy test records stored per session."
+    },
+    "/sandbox_users/{username}": {
+      "schema": "sandbox_user",
+      "description": "Workstation operator profile accounts catalog."
     }
   }
 }

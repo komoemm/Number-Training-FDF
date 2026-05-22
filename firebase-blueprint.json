@@ -69,6 +69,51 @@
         "role",
         "createdAt"
       ]
+    },
+    "custom_invoice": {
+      "title": "CustomInvoice",
+      "description": "An invoice document uploaded by an administrator for sandbox trainees to practice typing codes.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique record key of the invoice."
+        },
+        "expectedNumber": {
+          "type": "string",
+          "description": "The target expected tax code/registration number to match in typing assessment."
+        },
+        "companyName": {
+          "type": "string",
+          "description": "Name of the issuer company."
+        },
+        "invoiceDate": {
+          "type": "string",
+          "description": "Date printed on invoice."
+        },
+        "totalAmount": {
+          "type": "string",
+          "description": "Print value text for total billing amount."
+        },
+        "difficulty": {
+          "type": "string",
+          "description": "Assigned scoring difficulty classification."
+        },
+        "style": {
+          "type": "string",
+          "description": "Visual format style identifier."
+        },
+        "customImageUrl": {
+          "type": "string",
+          "description": "Base64 data URI of the uploaded invoice document image."
+        }
+      },
+      "required": [
+        "id",
+        "expectedNumber",
+        "companyName",
+        "customImageUrl"
+      ]
     }
   },
   "firestore": {
@@ -79,6 +124,10 @@
     "/sandbox_users/{username}": {
       "schema": "sandbox_user",
       "description": "Workstation operator profile accounts catalog."
+    },
+    "/custom_invoices/{invoiceId}": {
+      "schema": "custom_invoice",
+      "description": "Global custom invoices shared with sandbox practitioners."
     }
   }
 }

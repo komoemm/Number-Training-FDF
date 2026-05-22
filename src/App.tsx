@@ -228,6 +228,23 @@ export default function App() {
     }
   };
 
+  const fetchCustomInvoices = async () => {
+    if (isFirebaseActive && db) {
+      try {
+        const querySnapshot = await getDocs(collection(db, 'custom_invoices'));
+        const invoices: any[] = [];
+        querySnapshot.forEach((doc) => {
+          invoices.push(doc.data());
+        });
+        if (invoices.length > 0) {
+          setCustomInvoices(invoices);
+        }
+      } catch (err) {
+        console.error('Failed to load custom invoices from Firestore:', err);
+      }
+    }
+  };
+
   // Listen to Firebase Authenticated user states
   useEffect(() => {
     if (isFirebaseActive && auth) {
@@ -236,10 +253,12 @@ export default function App() {
           setCurrentUser(null);
           setAuthLoading(false);
           fetchSandboxUsers();
+          fetchCustomInvoices();
         } else {
           setCurrentUser(user);
           setAuthLoading(false);
           fetchSandboxUsers();
+          fetchCustomInvoices();
         }
       });
       return unsubscribe;
@@ -466,7 +485,16 @@ export default function App() {
       localStorage.setItem('custom_uploaded_invoices', JSON.stringify(updated));
     } catch (err) {
       console.warn('LocalStorage size limit exceeded:', err);
-      setUploadProgressError('Some custom files are only stored in webpage memory because localStorage size quota was exceeded.');
+    }
+
+    if (isFirebaseActive && db) {
+      try {
+        for (const item of newItems) {
+          await setDoc(doc(db, 'custom_invoices', item.id), item);
+        }
+      } catch (err) {
+        console.error('Failed to sync uploaded invoices to Firestore database:', err);
+      }
     }
 
     // Reset inputs
@@ -477,7 +505,7 @@ export default function App() {
   /**
    * Generates a realistic invoice canvas in-memory to let users test custom mode immediately
    */
-  const handleAddSampleToCustomList = () => {
+  const handleAddSampleToCustomList = async () => {
     const randomCount = customInvoices.length + 1;
     const rawNum = `T${Array.from({ length: 13 }, () => Math.floor(Math.random() * 10)).join('')}`;
     const sampleId = `smpl_${Date.now().toString().slice(-4)}`;
@@ -500,21 +528,37 @@ export default function App() {
     const updated = [...customInvoices, newCustom];
     setCustomInvoices(updated);
     localStorage.setItem('custom_uploaded_invoices', JSON.stringify(updated));
+
+    if (isFirebaseActive && db) {
+      try {
+        await setDoc(doc(db, 'custom_invoices', newCustom.id), newCustom);
+      } catch (err) {
+        console.error('Failed to sync sample invoice to Firestore database:', err);
+      }
+    }
   };
 
   /**
    * Removes an invoice from the custom sandbox list
    */
-  const handleDeleteCustomInvoice = (id: string) => {
+  const handleDeleteCustomInvoice = async (id: string) => {
     const updated = customInvoices.filter(item => item.id !== id);
     setCustomInvoices(updated);
     localStorage.setItem('custom_uploaded_invoices', JSON.stringify(updated));
+
+    if (isFirebaseActive && db) {
+      try {
+        await deleteDoc(doc(db, 'custom_invoices', id));
+      } catch (err) {
+        console.error('Failed to delete custom invoice from cloud Firestore:', err);
+      }
+    }
   };
 
   /**
    * Updates expected tax code for a specific custom invoice in real-time
    */
-  const updateCustomInvoiceCode = (id: string, newCode: string) => {
+  const updateCustomInvoiceCode = async (id: string, newCode: string) => {
     const formattedCode = newCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
     const updated = customInvoices.map(inv => {
       if (inv.id === id) {
@@ -528,12 +572,21 @@ export default function App() {
     } catch {
       // quota limit fallback silently handled in memory
     }
+
+    const matched = updated.find(inv => inv.id === id);
+    if (isFirebaseActive && db && matched) {
+      try {
+        await setDoc(doc(db, 'custom_invoices', id), matched);
+      } catch (err) {
+        console.error('Failed to update expected number in Firestore container:', err);
+      }
+    }
   };
 
   /**
    * Updates company name for a specific custom invoice in real-time
    */
-  const updateCustomInvoiceCompany = (id: string, newCompany: string) => {
+  const updateCustomInvoiceCompany = async (id: string, newCompany: string) => {
     const updated = customInvoices.map(inv => {
       if (inv.id === id) {
         return { ...inv, companyName: newCompany };
@@ -545,6 +598,15 @@ export default function App() {
       localStorage.setItem('custom_uploaded_invoices', JSON.stringify(updated));
     } catch {
       // quota limit fallback silently handled in memory
+    }
+
+    const matched = updated.find(inv => inv.id === id);
+    if (isFirebaseActive && db && matched) {
+      try {
+        await setDoc(doc(db, 'custom_invoices', id), matched);
+      } catch (err) {
+        console.error('Failed to update company name details in Firestore tracker:', err);
+      }
     }
   };
 
@@ -1049,9 +1111,21 @@ export default function App() {
                           </button>
                           {customInvoices.length > 0 && (
                             <button
-                              onClick={() => {
-                                setCustomInvoices([]);
-                                localStorage.removeItem('custom_uploaded_invoices');
+                              onClick={async () => {
+                                if (confirm('Are you sure you want to completely clear the custom uploaded invoices pool?')) {
+                                  setCustomInvoices([]);
+                                  localStorage.removeItem('custom_uploaded_invoices');
+                                  if (isFirebaseActive && db) {
+                                    try {
+                                      const snap = await getDocs(collection(db, 'custom_invoices'));
+                                      for (const docSnap of snap.docs) {
+                                        await deleteDoc(doc(db, 'custom_invoices', docSnap.id));
+                                      }
+                                    } catch (err) {
+                                      console.error('Failed to clear custom invoices from Firestore:', err);
+                                    }
+                                  }
+                                }
                               }}
                               className="text-[9px] hover:bg-rose-50 border border-transparent text-rose-600 px-2 py-1 rounded font-bold cursor-pointer transition uppercase tracking-wider"
                             >

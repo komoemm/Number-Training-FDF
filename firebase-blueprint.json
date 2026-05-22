@@ -1,0 +1,50 @@
+{
+  "entities": {
+    "test_session": {
+      "title": "TestSession",
+      "description": "A recording of an employee's typing speed and accuracy test session.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the employee who took the test."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of when the session was recorded."
+        },
+        "totalImagesAttempted": {
+          "type": "integer",
+          "description": "Total number of typing entries attempted during the session."
+        },
+        "correctEntries": {
+          "type": "integer",
+          "description": "Total number of typed entries that precisely matched the expectation."
+        },
+        "averageTimeMs": {
+          "type": "number",
+          "description": "The average high-precision typing time across all entries in milliseconds."
+        },
+        "details": {
+          "type": "array",
+          "description": "Detailed breakdowns for each individual image typed during the session."
+        }
+      },
+      "required": [
+        "userId",
+        "timestamp",
+        "totalImagesAttempted",
+        "correctEntries",
+        "averageTimeMs",
+        "details"
+      ]
+    }
+  },
+  "firestore": {
+    "/test_sessions/{sessionId}": {
+      "schema": "test_session",
+      "description": "Speed and accuracy test records stored per session."
+    }
+  }
+}

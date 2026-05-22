@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Validation Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Entity validation
+    function isValidSession(session) {
+      return session.userId is string 
+        && session.userId == request.auth.uid // Enforce ownership integrity
+        && session.totalImagesAttempted is int 
+        && session.totalImagesAttempted >= 0 
+        && session.totalImagesAttempted <= 100
+        && session.correctEntries is int 
+        && session.correctEntries >= 0 
+        && session.correctEntries <= session.totalImagesAttempted
+        && session.averageTimeMs is number 
+        && session.averageTimeMs >= 0.0
+        && session.averageTimeMs <= 60000.0 // Reasonable speed ceiling
+        && session.timestamp == request.time // Enforce server timestamp
+        && session.details is list 
+        && session.details.size() <= 100;
+    }
+
+    // Rules for test_sessions collection
+    match /test_sessions/{sessionId} {
+      allow create: if isSignedIn() 
+        && isValidId(sessionId)
+        && isValidSession(request.resource.data);
+        
+      allow read: if isSignedIn() 
+        && resource.data.userId == request.auth.uid; // Secure Query List Enforcer
+        
+      // Append-only rule for completed test sessions
+      allow update, delete: if false;
+    }
+  }
+}

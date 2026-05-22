@@ -12,6 +12,7 @@ import { GeneratedInvoiceData, TypingDetail, TestSession } from './types';
 import InvoiceViewer from './components/InvoiceViewer';
 import StatsPanel from './components/StatsPanel';
 import HistoryLogs from './components/HistoryLogs';
+import LoginScreen from './components/LoginScreen';
 import { 
   Zap, Keyboard, ShieldAlert, CheckCircle2, ChevronRight, ChevronLeft,
   RotateCcw, LogIn, LogOut, HelpCircle, Trophy, BarChart2, Check, X, Bookmark,
@@ -26,8 +27,114 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState<boolean>(true);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
+  // Local Offline User States
+  const [currentOfflineUser, setCurrentOfflineUser] = useState<any>(() => {
+    try {
+      const savedUser = localStorage.getItem('trainer_logged_in_user');
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [localUsers, setLocalUsers] = useState<any[]>(() => {
+    try {
+      const savedUsers = localStorage.getItem('trainer_sandbox_users');
+      if (savedUsers) {
+        return JSON.parse(savedUsers);
+      }
+    } catch {}
+    // Initial standard trainer users seed
+    return [
+      { username: 'admin', passwordText: 'admin', role: 'admin', createdAt: '2026-05-22' },
+      { username: 'guest', passwordText: 'guest', role: 'trainee', createdAt: '2026-05-22' }
+    ];
+  });
+
+  const [newTraineeUsername, setNewTraineeUsername] = useState<string>('');
+  const [newTraineePassword, setNewTraineePassword] = useState<string>('');
+  const [userCreationError, setUserCreationError] = useState<string | null>(null);
+  const [userCreationSuccess, setUserCreationSuccess] = useState<string | null>(null);
+
+  // Persist local operators directory
+  useEffect(() => {
+    localStorage.setItem('trainer_sandbox_users', JSON.stringify(localUsers));
+  }, [localUsers]);
+
+  const handleOfflineLogin = (uname: string, pword: string) => {
+    const trimmed = uname.trim().toLowerCase();
+    const match = localUsers.find(
+      u => u.username.toLowerCase() === trimmed && u.passwordText === pword
+    );
+    if (match) {
+      setCurrentOfflineUser(match);
+      localStorage.setItem('trainer_logged_in_user', JSON.stringify(match));
+      setRefreshTrigger(prev => prev + 1);
+      return { success: true };
+    }
+    return { success: false, error: 'Incorrect Username or Password. Please input valid operator details.' };
+  };
+
+  const handleOfflineLogout = () => {
+    setCurrentOfflineUser(null);
+    localStorage.removeItem('trainer_logged_in_user');
+    setIsTestActive(false);
+    setTestComplete(false);
+    setRefreshTrigger(prev => prev + 1);
+  };
+
+  const handleCreateTraineeUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    setUserCreationError(null);
+    setUserCreationSuccess(null);
+    
+    const uname = newTraineeUsername.trim();
+    const unameLower = uname.toLowerCase();
+    const pword = newTraineePassword.trim();
+
+    if (!uname || !pword) {
+      setUserCreationError('Operator Username and Password details cannot be empty.');
+      return;
+    }
+    if (uname.length < 3) {
+      setUserCreationError('Username identification must be at least 3 characters long.');
+      return;
+    }
+    if (localUsers.some(u => u.username.toLowerCase() === unameLower)) {
+      setUserCreationError('Operator identifier matches an existing account in training database.');
+      return;
+    }
+
+    const newUser = {
+      username: uname,
+      passwordText: pword,
+      role: 'trainee',
+      createdAt: new Date().toLocaleDateString('ja-JP', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      })
+    };
+
+    setLocalUsers(prev => [...prev, newUser]);
+    setNewTraineeUsername('');
+    setNewTraineePassword('');
+    setUserCreationSuccess(`Successfully created trainee operator account: "${uname}".`);
+  };
+
+  const handleDeleteTraineeUser = (uname: string) => {
+    if (uname.toLowerCase() === 'admin') {
+      alert('The root system admin account is permanent.');
+      return;
+    }
+    if (confirm(`Are you sure you want to delete trainee operator account "${uname}"?`)) {
+      setLocalUsers(prev => prev.filter(u => u.username.toLowerCase() !== uname.toLowerCase()));
+      setUserCreationSuccess(`Removed trainee operator: "${uname}".`);
+    }
+  };
+
   // Setup tabs selection
-  const [activeSetupTab, setActiveSetupTab] = useState<'standard' | 'custom'>('standard');
+  const [activeSetupTab, setActiveSetupTab] = useState<'standard' | 'custom' | 'users'>('standard');
   
   // Custom invoices uploaded from local system
   const [customInvoices, setCustomInvoices] = useState<(GeneratedInvoiceData & { customImageUrl?: string })[]>(() => {
@@ -510,7 +617,7 @@ export default function App() {
     setIsSaving(true);
     setSaveError(null);
 
-    const activeUserId = currentUser ? currentUser.uid : 'sandbox_guest_uid';
+    const activeUserId = currentOfflineUser ? currentOfflineUser.username : 'guest';
 
     // Construct exactly conformant payload
     const rawPayload = {
@@ -600,6 +707,15 @@ export default function App() {
 
   const currentRank = evaluateRank();
 
+  if (!currentOfflineUser) {
+    return (
+      <LoginScreen 
+        onLogin={handleOfflineLogin}
+        localUsers={localUsers}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-100 text-slate-800 font-sans" id="speedtest-root">
       {/* 1. Global Navigation Bar */}
@@ -607,57 +723,43 @@ export default function App() {
         <div className="flex items-center gap-4">
           <div className="bg-indigo-500 w-8 h-8 rounded flex items-center justify-center font-bold text-sm text-white shadow-lg">DT</div>
           <h1 className="text-xs sm:text-sm font-semibold tracking-wide uppercase">
-            Data Entry Speed Assessment <span className="text-slate-400 font-normal ml-2 hidden md:inline">// JP-QIN-13</span>
+            Data Entry Speed Assessment <span className="text-slate-400 font-normal ml-2 hidden md:inline">// JP-QIN-13 Workstation</span>
           </h1>
         </div>
         
         {/* Auth status & Connection indicator */}
         <div className="flex items-center gap-6 text-xs" id="authentication-widget">
           {/* Status Label */}
-          <div className="hidden sm:flex flex-col items-end leading-none">
-            <span className="text-slate-400 uppercase tracking-tighter text-[9px] font-bold">Operator</span>
-            <span className="font-medium mt-1">
-              {currentUser ? (currentUser.displayName || 'k_tanaka_08') : 'Guest-User'}
+          <div className="flex flex-col items-end leading-none">
+            <span className="text-slate-400 uppercase tracking-tighter text-[9px] font-bold">Operator Profile</span>
+            <span className="font-bold text-indigo-400 mt-1 flex items-center gap-1.5">
+              {currentOfflineUser.username} 
+              <span className="text-[8px] font-mono bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded uppercase border border-indigo-500/30">
+                {currentOfflineUser.role}
+              </span>
             </span>
           </div>
 
           <div className="w-px h-8 bg-slate-700 hidden sm:block"></div>
 
-          <div className="flex flex-col items-end leading-none">
-            <span className="text-slate-400 uppercase tracking-tighter text-[9px] font-bold">Session Mode</span>
-            <span className="font-medium mt-1 flex items-center gap-1">
-              {isFirebaseActive ? (
-                <span className="text-sky-400">Firebase.Active</span>
-              ) : (
-                <span className="text-amber-405">Sandbox.Guest</span>
-              )}
+          <div className="hidden sm:flex flex-col items-end leading-none">
+            <span className="text-slate-400 uppercase tracking-tighter text-[9px] font-bold">System Status</span>
+            <span className="font-medium mt-1 flex items-center gap-1 text-emerald-450 text-emerald-400 font-mono">
+              ● Online.Secure
             </span>
           </div>
 
-          {currentUser && (
-            <>
-              <div className="w-px h-8 bg-slate-700"></div>
-              <button
-                onClick={handleLogout}
-                className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-rose-450 transition text-[10px] font-bold uppercase cursor-pointer"
-                title="Sign Out Workstation"
-              >
-                Signout
-              </button>
-            </>
-          )}
+          <div className="w-px h-8 bg-slate-700"></div>
 
-          {!currentUser && isFirebaseActive && (
-            <>
-              <div className="w-px h-8 bg-slate-700"></div>
-              <button
-                onClick={handleGoogleLogin}
-                className="px-2 py-1 bg-indigo-500 hover:bg-indigo-400 text-white rounded text-[10px] font-bold transition uppercase cursor-pointer"
-              >
-                Sign In
-              </button>
-            </>
-          )}
+          <button
+            onClick={handleOfflineLogout}
+            className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-550 hover:bg-rose-500 text-white transition text-[11px] font-bold uppercase cursor-pointer shadow-sm flex items-center gap-1"
+            title="Log Out Workstation"
+            id="logout-button"
+          >
+            <LogOut className="w-3.5 h-3.5 text-white" />
+            <span className="hidden sm:inline">Logout</span>
+          </button>
         </div>
       </header>
 
@@ -682,12 +784,12 @@ export default function App() {
             <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 flex flex-col justify-between shadow-sm animate-fade-in">
               <div className="space-y-6">
                 {/* Dynamic Configuration Navigation Tabs */}
-                <div className="flex border-b border-slate-200 font-sans mb-2">
+                <div className="flex border-b border-slate-200 font-sans mb-2 overflow-x-auto shrink-0 scrollbar-none">
                   <button
                     onClick={() => { setActiveSetupTab('standard'); setUploadProgressError(null); }}
-                    className={`pb-3 px-1 sm:px-4 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 ${
+                    className={`pb-3 px-1 sm:px-4 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 shrink-0 ${
                       activeSetupTab === 'standard'
-                        ? 'border-indigo-600 text-indigo-600'
+                        ? 'border-indigo-600 text-indigo-600 font-extrabold'
                         : 'border-transparent text-slate-400 hover:text-slate-600'
                     }`}
                   >
@@ -696,15 +798,28 @@ export default function App() {
                   </button>
                   <button
                     onClick={() => { setActiveSetupTab('custom'); setUploadProgressError(null); }}
-                    className={`pb-3 px-1 sm:px-4 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 ${
+                    className={`pb-3 px-1 sm:px-4 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 shrink-0 ${
                       activeSetupTab === 'custom'
-                        ? 'border-indigo-600 text-indigo-600'
+                        ? 'border-indigo-600 text-indigo-600 font-extrabold'
                         : 'border-transparent text-slate-400 hover:text-slate-600'
                     }`}
                   >
                     <Upload className="w-3.5 h-3.5" />
                     <span>Custom Uploads Portal</span>
                   </button>
+                  {currentOfflineUser.role === 'admin' && (
+                    <button
+                      onClick={() => { setActiveSetupTab('users'); setUploadProgressError(null); }}
+                      className={`pb-3 px-1 sm:px-4 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 shrink-0 ${
+                        activeSetupTab === 'users'
+                          ? 'border-indigo-600 text-indigo-600 font-extrabold'
+                          : 'border-transparent text-slate-400 hover:text-slate-600'
+                      }`}
+                    >
+                      <Database className="w-3.5 h-3.5" />
+                      <span>👑 Trainee User Accounts</span>
+                    </button>
+                  )}
                 </div>
 
                 {activeSetupTab === 'standard' ? (
@@ -766,9 +881,9 @@ export default function App() {
                       </button>
                     </div>
                   </>
-                ) : (
+                ) : activeSetupTab === 'custom' ? (
                   <>
-                    <div className="space-y-1">
+                    <div className="space-y-1 block">
                       <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                         Custom Document Sandbox
                       </h2>
@@ -778,71 +893,91 @@ export default function App() {
                     </div>
 
                     {/* Form block */}
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-150">
-                      <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 block mb-3">
-                        Step 1: Input Document Attributes:
-                      </span>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3.5">
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                            Expected Tax Number <span className="text-rose-500">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="e.g. T1234567890123"
-                            maxLength={14}
-                            value={customExpectedCode}
-                            onChange={(e) => setCustomExpectedCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                            className="w-full p-2 bg-white border border-slate-205 text-xs text-slate-800 font-mono rounded-lg outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100"
-                          />
+                    {currentOfflineUser.role === 'trainee' ? (
+                      <div className="bg-gradient-to-tr from-indigo-50/70 to-slate-50 p-5 rounded-2xl border border-indigo-100 flex items-start gap-4 shadow-sm animate-fade-in" id="trainee-prepared-notice">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center shrink-0 text-indigo-600 shadow-inner">
+                          <CheckCircle2 className="w-5 h-5 text-indigo-600 animate-none" />
                         </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                            Invoice Issuer (Optional)
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Acme Corporation"
-                            maxLength={36}
-                            value={customCompanyName}
-                            onChange={(e) => setCustomCompanyName(e.target.value)}
-                            className="w-full p-2 bg-white border border-slate-205 text-xs text-slate-800 rounded-lg outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100"
-                          />
+                        <div className="space-y-1 flex-1">
+                          <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
+                            📚 Practice Queue Prepared
+                          </h4>
+                          <p className="text-[11px] text-slate-500 leading-relaxed">
+                            Your classroom/system administrator has preconfigured specific high-fidelity Japanese Invoice sets for assessment. Type the correct registration codes for each catalog page below. Timing split speed logs will update your operator dashboard stats permanently.
+                          </p>
                         </div>
                       </div>
+                    ) : (
+                      <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 space-y-4 shadow-inner" id="admin-inputs-portal">
+                        <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 block mb-1">
+                          Step 1: Input Document Attributes:
+                        </span>
 
-                      {/* Drop area */}
-                      <div className="relative">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
-                          onChange={(e) => {
-                            if (e.target.files && e.target.files.length > 0) {
-                              handleCustomImagesUpload(e.target.files);
-                            }
-                          }}
-                        />
-                        <div className="border border-dashed border-slate-300 bg-white hover:bg-slate-50 p-4 rounded-lg text-center transition flex flex-col items-center justify-center space-y-1">
-                          <Upload className="w-5 h-5 text-indigo-500 animate-pulse" />
-                          <div className="text-[11px] text-slate-600 font-bold">
-                            Click to select multiple invoice photos or drag & drop them here
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                              Expected Tax Number <span className="text-rose-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. T1234567890123"
+                              maxLength={14}
+                              value={customExpectedCode}
+                              onChange={(e) => setCustomExpectedCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                              className="w-full p-2 bg-white border border-slate-205 text-xs text-slate-805 font-mono rounded-lg outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100"
+                            />
                           </div>
-                          <span className="text-[9px] text-slate-400 font-sans text-center">
-                            Accepts PNG, JPG (Multi-select enabled, Max 3MB each)<br/>
-                            <span className="text-indigo-650 font-semibold text-[10px]">Tip: Includes auto-extraction of 13-digit codes directly from filenames!</span>
-                          </span>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                              Invoice Issuer (Optional)
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Acme Corporation"
+                              maxLength={36}
+                              value={customCompanyName}
+                              onChange={(e) => setCustomCompanyName(e.target.value)}
+                              className="w-full p-2 bg-white border border-slate-205 text-xs text-slate-805 rounded-lg outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100"
+                            />
+                          </div>
                         </div>
-                      </div>
 
-                      {uploadProgressError && (
-                        <div className="text-[11px] text-rose-605 bg-rose-50 border border-rose-100 rounded px-2.5 py-1.5 mt-2 font-medium font-sans">
-                          {uploadProgressError}
+                        <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 block mt-2">
+                          Step 2: Upload Document Image Multi-Selection:
+                        </span>
+
+                        {/* Drop area */}
+                        <div className="relative">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
+                            onChange={(e) => {
+                              if (e.target.files && e.target.files.length > 0) {
+                                handleCustomImagesUpload(e.target.files);
+                              }
+                            }}
+                          />
+                          <div className="border border-dashed border-slate-300 bg-white hover:bg-slate-50 p-4 rounded-lg text-center transition flex flex-col items-center justify-center space-y-1">
+                            <Upload className="w-5 h-5 text-indigo-600 animate-pulse" />
+                            <div className="text-[11px] text-slate-600 font-bold">
+                              Click to select multiple invoice photos or drag & drop them here
+                            </div>
+                            <span className="text-[9px] text-slate-400 font-sans text-center">
+                              Accepts PNG, JPG (Multi-select enabled, Max 3MB each)<br/>
+                              <span className="text-indigo-650 font-semibold text-[10px]">Tip: Includes auto-extraction of 13-digit codes directly from filenames!</span>
+                            </span>
+                          </div>
                         </div>
-                      )}
-                    </div>
+
+                        {uploadProgressError && (
+                          <div className="text-[11px] text-rose-600 bg-rose-50 border border-rose-100 rounded px-2.5 py-1.5 mt-2 font-medium font-sans">
+                            {uploadProgressError}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Files Section */}
                     <div className="space-y-2">
@@ -961,6 +1096,120 @@ export default function App() {
                         <Play className="w-3.5 h-3.5 fill-white text-white" />
                         <span>Launch Session ({customInvoices.length} Custom Invoices)</span>
                       </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-6 animate-fade-in" id="admin-user-management-tab">
+                      <div className="space-y-1">
+                        <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
+                          👑 Trainee Operator Accounts Manager
+                        </h2>
+                        <p className="text-slate-500 text-xs">
+                          Create and manage trainee profiles, distribute system access credentials, and monitor speed diagnostics.
+                        </p>
+                      </div>
+
+                      {/* User Account Creation Form */}
+                      <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                        <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 flex items-center gap-1.5">
+                          <Plus className="w-4 h-4 text-indigo-600 font-bold" /> Provision New Trainee Operator ID
+                        </span>
+
+                        <form onSubmit={handleCreateTraineeUser} className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                              New Operator Name
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. j_smith_99"
+                              value={newTraineeUsername}
+                              onChange={(e) => setNewTraineeUsername(e.target.value)}
+                              className="w-full p-2.5 bg-white border border-slate-200 text-xs text-slate-805 rounded-xl outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                              Secure Password
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. smithpass"
+                              value={newTraineePassword}
+                              onChange={(e) => setNewTraineePassword(e.target.value)}
+                              className="w-full p-2.5 bg-white border border-slate-200 text-xs text-slate-805 rounded-xl outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100"
+                            />
+                          </div>
+
+                          <button
+                            type="submit"
+                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1 w-full"
+                          >
+                            <Plus className="w-4 h-4" />
+                            <span>Create Operator</span>
+                          </button>
+                        </form>
+
+                        {userCreationError && (
+                          <p className="text-[11px] text-rose-600 font-sans">{userCreationError}</p>
+                        )}
+                        {userCreationSuccess && (
+                          <p className="text-[11px] text-emerald-600 font-sans">{userCreationSuccess}</p>
+                        )}
+                      </div>
+
+                      {/* Active Operator Directory Index Table */}
+                      <div className="space-y-3">
+                        <span className="text-[10px] uppercase font-bold tracking-widest text-slate-400 block">
+                          Active Sandbox Profiles ({localUsers.length})
+                        </span>
+
+                        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                          <table className="w-full text-left text-xs border-collapse font-sans">
+                            <thead>
+                              <tr className="bg-slate-50 text-slate-500 font-mono text-[9px] uppercase tracking-wider border-b border-slate-200">
+                                <th className="p-3">Operator Username</th>
+                                <th className="p-3">Plaintext Access Key</th>
+                                <th className="p-3">Assigned Role</th>
+                                <th className="p-3">Created Date</th>
+                                <th className="p-3 text-right">Delete profile</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {localUsers.map((user) => (
+                                <tr key={user.username} className="hover:bg-slate-50/50 transition">
+                                  <td className="p-3 font-bold text-slate-705">{user.username}</td>
+                                  <td className="p-3 font-mono text-slate-500 font-bold">{user.passwordText}</td>
+                                  <td className="p-3">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-sans uppercase border ${
+                                      user.role === 'admin'
+                                        ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
+                                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                                    }`}>
+                                      {user.role}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-slate-400 font-mono text-[10px]">{user.createdAt || '2026-05-22'}</td>
+                                  <td className="p-3 text-right">
+                                    {user.role === 'admin' ? (
+                                      <span className="text-[9px] text-slate-400 italic">Core Admin</span>
+                                    ) : (
+                                      <button
+                                        onClick={() => handleDeleteTraineeUser(user.username)}
+                                        className="text-[10px] text-rose-500 hover:text-rose-700 font-bold uppercase transition cursor-pointer font-sans"
+                                      >
+                                        Delete
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     </div>
                   </>
                 )}
@@ -1283,8 +1532,9 @@ export default function App() {
 
         {/* 3. Bottom Section: Historical logs */}
         <HistoryLogs 
-          userId={currentUser ? currentUser.uid : 'sandbox_guest_uid'} 
+          userId={currentOfflineUser ? currentOfflineUser.username : 'guest'} 
           refreshTrigger={refreshTrigger}
+          isAdmin={currentOfflineUser?.role === 'admin'}
         />
 
       </main>

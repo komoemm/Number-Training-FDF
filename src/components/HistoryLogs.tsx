@@ -25,6 +25,10 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
   const [filterUser, setFilterUser] = useState<string>('all');
   const [filterLoginUser, setFilterLoginUser] = useState<string>('all');
 
+  // Multi-stage inline deletion confirmation state variables (Iframe-safe)
+  const [sessionPendingDeleteId, setSessionPendingDeleteId] = useState<string | null>(null);
+  const [loginPendingDeleteId, setLoginPendingDeleteId] = useState<string | null>(null);
+
   useEffect(() => {
     if (activeTab === 'typing') {
       fetchSessionHistory();
@@ -435,21 +439,51 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                               </div>
                             </div>
                             
-                            <div className="flex items-center gap-2">
-                              {isAdmin && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (confirm(`Absolutely delete speed report of operator "${session.userId}"?`)) {
-                                      handleDeleteSession(session.timestamp, session.id);
-                                    }
-                                  }}
-                                  className="p-1 px-1.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                                  title="Delete Session Log"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
+                             <div className="flex items-center gap-2">
+                              {isAdmin && (() => {
+                                const sessionKey = session.id || String(session.timestamp instanceof Date ? session.timestamp.getTime() : session.timestamp);
+                                return (
+                                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                    {sessionPendingDeleteId === sessionKey ? (
+                                      <>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteSession(session.timestamp, session.id);
+                                            setSessionPendingDeleteId(null);
+                                          }}
+                                          className="bg-rose-600 hover:bg-rose-700 text-white font-extrabold uppercase px-1.5 py-0.5 rounded text-[9px] transition cursor-pointer"
+                                        >
+                                          Sure?
+                                        </button>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSessionPendingDeleteId(null);
+                                          }}
+                                          className="text-slate-405 hover:text-slate-650 text-[9px] font-bold uppercase transition cursor-pointer"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSessionPendingDeleteId(sessionKey);
+                                          setTimeout(() => {
+                                            setSessionPendingDeleteId(curr => curr === sessionKey ? null : curr);
+                                          }, 5000);
+                                        }}
+                                        className="p-1 px-1.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                        title="Delete Session Log"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                               {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
                             </div>
                           </div>
@@ -556,17 +590,40 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                           </td>
                           {isAdmin && (
                             <td className="py-3.5 text-right">
-                              <button
-                                onClick={() => {
-                                  if (confirm('Permanently wipe this authentication event entry?')) {
-                                    handleDeleteLoginLog(lg.id);
-                                  }
-                                }}
-                                className="p-1 px-2 rounded hover:text-rose-600 hover:bg-rose-50/55 text-slate-400 transition cursor-pointer"
-                                title="Wipe Log Row"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              <div className="flex justify-end items-center gap-1.5 inline-flex">
+                                {loginPendingDeleteId === lg.id ? (
+                                  <>
+                                    <button
+                                      onClick={() => {
+                                        handleDeleteLoginLog(lg.id);
+                                        setLoginPendingDeleteId(null);
+                                      }}
+                                      className="bg-rose-600 hover:bg-rose-700 text-white font-extrabold uppercase px-1.5 py-0.5 rounded text-[9px] transition cursor-pointer font-sans"
+                                    >
+                                      Sure?
+                                    </button>
+                                    <button
+                                      onClick={() => setLoginPendingDeleteId(null)}
+                                      className="text-slate-400 hover:text-slate-650 text-[9px] font-bold uppercase transition cursor-pointer font-sans"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      setLoginPendingDeleteId(lg.id);
+                                      setTimeout(() => {
+                                        setLoginPendingDeleteId(curr => curr === lg.id ? null : curr);
+                                      }, 5000);
+                                    }}
+                                    className="p-1 px-2 rounded hover:text-rose-600 hover:bg-rose-50/55 text-slate-400 transition cursor-pointer"
+                                    title="Wipe Log Row"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           )}
                         </tr>

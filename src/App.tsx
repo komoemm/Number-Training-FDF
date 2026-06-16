@@ -56,6 +56,14 @@ export default function App() {
   const [userCreationError, setUserCreationError] = useState<string | null>(null);
   const [userCreationSuccess, setUserCreationSuccess] = useState<string | null>(null);
 
+  // States for bulk operator creation
+  const [operatorInputMode, setOperatorInputMode] = useState<'single' | 'bulk'>('single');
+  const [bulkInputText, setBulkInputText] = useState<string>('');
+  const [bulkDefaultPass, setBulkDefaultPass] = useState<string>('trainee123');
+
+  // Track trainee user account slated for deletion confirmation
+  const [userPendingDelete, setUserPendingDelete] = useState<string | null>(null);
+
   // Persist local operators directory
   useEffect(() => {
     localStorage.setItem('trainer_sandbox_users', JSON.stringify(localUsers));
@@ -168,12 +176,123 @@ export default function App() {
     setUserCreationSuccess(`Successfully created trainee operator account: "${uname}".`);
   };
 
-  const handleDeleteTraineeUser = async (uname: string) => {
-    if (uname.toLowerCase() === 'admin') {
-      alert('The root system admin account is permanent.');
+  const handleBulkCreateTraineeUsers = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUserCreationError(null);
+    setUserCreationSuccess(null);
+
+    const lines = bulkInputText.split('\n');
+    const createdUsers: any[] = [];
+    const skippedUsers: string[] = [];
+    const invalidFormatUsers: string[] = [];
+
+    const existingUsernamesLower = new Set(localUsers.map(u => u.username.toLowerCase()));
+    
+    const today = new Date().toLocaleDateString('ja-JP', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+
+    for (let line of lines) {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) continue;
+
+      let rawUname = '';
+      let rawPword = '';
+
+      // Support comma (,), colon (:), or tab separators
+      let separator = '';
+      if (trimmedLine.includes(',')) {
+        separator = ',';
+      } else if (trimmedLine.includes(':')) {
+        separator = ':';
+      } else if (trimmedLine.includes('\t')) {
+        separator = '\t';
+      }
+
+      if (separator) {
+        const parts = trimmedLine.split(separator);
+        rawUname = parts[0].trim();
+        rawPword = parts.slice(1).join(separator).trim();
+      } else {
+        // Just a username, use default password
+        rawUname = trimmedLine;
+        rawPword = bulkDefaultPass.trim();
+      }
+
+      const unameLower = rawUname.toLowerCase();
+
+      if (!rawUname || !rawPword || rawUname.length < 3) {
+        invalidFormatUsers.push(trimmedLine);
+        continue;
+      }
+
+      if (existingUsernamesLower.has(unameLower)) {
+        skippedUsers.push(rawUname);
+        continue;
+      }
+
+      const newUser = {
+        username: rawUname,
+        passwordText: rawPword,
+        role: 'trainee',
+        createdAt: today
+      };
+
+      createdUsers.push(newUser);
+      existingUsernamesLower.add(unameLower);
+    }
+
+    if (createdUsers.length === 0) {
+      let errText = 'No new valid operator profiles were identified.';
+      if (skippedUsers.length > 0) {
+        errText += ` Skipped duplicates: ${skippedUsers.join(', ')}.`;
+      }
+      if (invalidFormatUsers.length > 0) {
+        errText += ` Invalid format or too short (<3 chars): ${invalidFormatUsers.join(', ')}.`;
+      }
+      setUserCreationError(errText);
       return;
     }
-    if (confirm(`Are you sure you want to delete trainee operator account "${uname}"?`)) {
+
+    // 1. Sync to memory & Local Storage
+    setLocalUsers(prev => [...prev, ...createdUsers]);
+
+    // 2. Sync to Firestore in parallel using Promise.all
+    if (isFirebaseActive && db) {
+      try {
+        const promises = createdUsers.map(async (user) => {
+          const uLower = user.username.toLowerCase();
+          return setDoc(doc(db, 'sandbox_users', uLower), user);
+        });
+        await Promise.all(promises);
+      } catch (err) {
+        console.error('Failed to batch sync profiles to cloud database:', err);
+        setUserCreationError('Profiles written locally, but some failed cloud database synchronization.');
+      }
+    }
+
+    // Done!
+    setBulkInputText('');
+    
+    let successMsg = `Successfully batch-provisioned ${createdUsers.length} trainee operator accounts.`;
+    if (skippedUsers.length > 0) {
+      successMsg += ` Skipped ${skippedUsers.length} duplicates.`;
+    }
+    if (invalidFormatUsers.length > 0) {
+      successMsg += ` (Failed to import ${invalidFormatUsers.length} rows due to invalid formats).`;
+    }
+    setUserCreationSuccess(successMsg);
+  };
+
+  const handleDeleteTraineeUser = async (uname: string, force?: boolean) => {
+    if (uname.toLowerCase() === 'admin') {
+      setUserCreationError('The root system admin account is permanent.');
+      return;
+    }
+    
+    if (force || userPendingDelete === uname) {
       const unameLower = uname.toLowerCase();
       setLocalUsers(prev => prev.filter(u => u.username.toLowerCase() !== unameLower));
       
@@ -186,6 +305,13 @@ export default function App() {
       }
 
       setUserCreationSuccess(`Removed trainee operator: "${uname}".`);
+      setUserPendingDelete(null);
+    } else {
+      setUserPendingDelete(uname);
+      // Auto-reset delete assurance check after 5 seconds to prevent stale states
+      setTimeout(() => {
+        setUserPendingDelete(current => current === uname ? null : current);
+      }, 5000);
     }
   };
 
@@ -1313,45 +1439,108 @@ export default function App() {
 
                       {/* User Account Creation Form */}
                       <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                        <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 flex items-center gap-1.5">
-                          <Plus className="w-4 h-4 text-indigo-600 font-bold" /> Provision New Trainee Operator ID
-                        </span>
-
-                        <form onSubmit={handleCreateTraineeUser} className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                              New Operator Name
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="e.g. j_smith_99"
-                              value={newTraineeUsername}
-                              onChange={(e) => setNewTraineeUsername(e.target.value)}
-                              className="w-full p-2.5 bg-white border border-slate-200 text-xs text-slate-805 rounded-xl outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100"
-                            />
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-3 gap-2">
+                          <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 flex items-center gap-1.5">
+                            <Plus className="w-4 h-4 text-indigo-600 font-bold" /> Provision Trainee Operator Profiles
+                          </span>
+                          
+                          {/* Inner Tabs to toggle Single vs Bulk Operator provision */}
+                          <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-[10px] uppercase font-bold">
+                            <button
+                              onClick={() => { setOperatorInputMode('single'); setUserCreationError(null); setUserCreationSuccess(null); }}
+                              className={`px-3 py-1.5 rounded-md cursor-pointer transition ${operatorInputMode === 'single' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                            >
+                              Single operator
+                            </button>
+                            <button
+                              onClick={() => { setOperatorInputMode('bulk'); setUserCreationError(null); setUserCreationSuccess(null); }}
+                              className={`px-3 py-1.5 rounded-md cursor-pointer transition ${operatorInputMode === 'bulk' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                            >
+                              Bulk Add Operators (Multi-User)
+                            </button>
                           </div>
+                        </div>
 
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                              Secure Password
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="e.g. smithpass"
-                              value={newTraineePassword}
-                              onChange={(e) => setNewTraineePassword(e.target.value)}
-                              className="w-full p-2.5 bg-white border border-slate-200 text-xs text-slate-805 rounded-xl outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100"
-                            />
-                          </div>
+                        {operatorInputMode === 'single' ? (
+                          <form onSubmit={handleCreateTraineeUser} className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end animate-fade-in">
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                                New Operator Name
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="e.g. j_smith_99"
+                                value={newTraineeUsername}
+                                onChange={(e) => setNewTraineeUsername(e.target.value)}
+                                className="w-full p-2.5 bg-white border border-slate-200 text-xs text-slate-805 rounded-xl outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100"
+                              />
+                            </div>
 
-                          <button
-                            type="submit"
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1 w-full"
-                          >
-                            <Plus className="w-4 h-4" />
-                            <span>Create Operator</span>
-                          </button>
-                        </form>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                                Secure Password
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="e.g. smithpass"
+                                value={newTraineePassword}
+                                onChange={(e) => setNewTraineePassword(e.target.value)}
+                                className="w-full p-2.5 bg-white border border-slate-200 text-xs text-slate-805 rounded-xl outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100"
+                              />
+                            </div>
+
+                            <button
+                              type="submit"
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1 w-full"
+                            >
+                              <Plus className="w-4 h-4" />
+                              <span>Create Operator</span>
+                            </button>
+                          </form>
+                        ) : (
+                          <form onSubmit={handleBulkCreateTraineeUsers} className="space-y-4 animate-fade-in">
+                            <div className="flex flex-col sm:flex-row gap-4">
+                              <div className="flex-1">
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                                  Operator List Input (One operator username per line)
+                                </label>
+                                <textarea
+                                  placeholder="Type or paste operators list. Formats accepted:&#10;operator_a&#10;operator_b,password123&#10;operator_c:secret_key_4"
+                                  rows={5}
+                                  value={bulkInputText}
+                                  onChange={(e) => setBulkInputText(e.target.value)}
+                                  className="w-full p-3 bg-white border border-slate-200 text-xs font-mono text-slate-800 rounded-xl outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100 placeholder:text-slate-400"
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">
+                                  Tip: Paste from Excel or Notepad. If password is not provided on that line, the Default Password below is assigned auto-generated.
+                                </p>
+                              </div>
+
+                              <div className="sm:w-64 space-y-3">
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                                    Default Password Fallback
+                                  </label>
+                                  <input
+                                    type="text"
+                                    placeholder="e.g. trainee123"
+                                    value={bulkDefaultPass}
+                                    onChange={(e) => setBulkDefaultPass(e.target.value)}
+                                    className="w-full p-2.5 bg-white border border-slate-200 text-xs text-slate-805 rounded-xl outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100"
+                                  />
+                                </div>
+
+                                <button
+                                  type="submit"
+                                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1.5 w-full mt-4"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                  <span>Bulk Import Profiles</span>
+                                </button>
+                              </div>
+                            </div>
+                          </form>
+                        )}
 
                         {userCreationError && (
                           <p className="text-[11px] text-rose-600 font-sans">{userCreationError}</p>
@@ -1397,12 +1586,31 @@ export default function App() {
                                     {user.role === 'admin' ? (
                                       <span className="text-[9px] text-slate-400 italic">Core Admin</span>
                                     ) : (
-                                      <button
-                                        onClick={() => handleDeleteTraineeUser(user.username)}
-                                        className="text-[10px] text-rose-500 hover:text-rose-700 font-bold uppercase transition cursor-pointer font-sans"
-                                      >
-                                        Delete
-                                      </button>
+                                      <div className="flex justify-end gap-2 items-center">
+                                        {userPendingDelete === user.username ? (
+                                          <>
+                                            <button
+                                              onClick={() => handleDeleteTraineeUser(user.username, true)}
+                                              className="text-[10px] bg-rose-600 hover:bg-rose-700 text-white font-extrabold uppercase px-2 py-1 rounded transition cursor-pointer font-sans"
+                                            >
+                                              Confirm Del?
+                                            </button>
+                                            <button
+                                              onClick={() => setUserPendingDelete(null)}
+                                              className="text-[10px] text-slate-400 hover:text-slate-650 font-semibold uppercase font-sans cursor-pointer"
+                                            >
+                                              Cancel
+                                            </button>
+                                          </>
+                                        ) : (
+                                          <button
+                                            onClick={() => handleDeleteTraineeUser(user.username)}
+                                            className="text-[10px] text-rose-500 hover:text-rose-700 font-bold uppercase transition cursor-pointer font-sans"
+                                          >
+                                            Delete
+                                          </button>
+                                        )}
+                                      </div>
                                     )}
                                   </td>
                                 </tr>

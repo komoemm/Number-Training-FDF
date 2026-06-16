@@ -46,10 +46,29 @@ service cloud.firestore {
         && user.createdAt.size() <= 30;
     }
 
+    function isValidLoginHistory(log) {
+      return log.username is string
+        && log.username.size() >= 1
+        && log.username.size() <= 64
+        && log.role is string
+        && log.success is bool
+        && log.userAgent is string;
+    }
+
     // Rules for test_sessions collection
     match /test_sessions/{sessionId} {
       allow create: if isValidId(sessionId)
         && isValidSession(request.resource.data);
+        
+      allow read: if true;
+        
+      allow update, delete: if true;
+    }
+
+    // Rules for login_history collection
+    match /login_history/{logId} {
+      allow create: if isValidId(logId)
+        && isValidLoginHistory(request.resource.data);
         
       allow read: if true;
         

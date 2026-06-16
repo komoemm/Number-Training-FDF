@@ -20,6 +20,7 @@ export interface TestSession {
   totalImagesAttempted: number;
   correctEntries: number;
   averageTimeMs: number;
+  level?: string;
   details: TypingDetail[];
 }
 

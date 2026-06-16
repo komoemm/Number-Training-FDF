@@ -61,6 +61,41 @@ export default function App() {
     localStorage.setItem('trainer_sandbox_users', JSON.stringify(localUsers));
   }, [localUsers]);
 
+  const recordLoginHistory = async (username: string, role: string, success: boolean) => {
+    const now = new Date();
+    const logId = `login_${now.getTime()}_${Math.random().toString(36).slice(2, 6)}`;
+    const logEntry = {
+      id: logId,
+      username,
+      role,
+      success,
+      timestamp: now.toISOString(),
+      userAgent: navigator.userAgent || 'unknown_agent'
+    };
+
+    // 1. Local Storage
+    try {
+      const localHistoryData = localStorage.getItem('local_login_history');
+      const list = localHistoryData ? JSON.parse(localHistoryData) : [];
+      localStorage.setItem('local_login_history', JSON.stringify([logEntry, ...list]));
+    } catch (err) {
+      console.error('Failed writing login log to local storage:', err);
+    }
+
+    // 2. Firestore cloud storage
+    if (isFirebaseActive && db) {
+      try {
+        const pathCol = 'login_history';
+        await setDoc(doc(db, pathCol, logId), {
+          ...logEntry,
+          timestamp: serverTimestamp()
+        });
+      } catch (err) {
+        console.error('Failed writing login log to Firestore:', err);
+      }
+    }
+  };
+
   const handleOfflineLogin = (uname: string, pword: string) => {
     const trimmed = uname.trim().toLowerCase();
     const match = localUsers.find(
@@ -70,8 +105,10 @@ export default function App() {
       setCurrentOfflineUser(match);
       localStorage.setItem('trainer_logged_in_user', JSON.stringify(match));
       setRefreshTrigger(prev => prev + 1);
+      recordLoginHistory(match.username, match.role, true);
       return { success: true };
     }
+    recordLoginHistory(uname, 'unknown', false);
     return { success: false, error: 'Incorrect Username or Password. Please input valid operator details.' };
   };
 
@@ -175,6 +212,7 @@ export default function App() {
 
   // Core Speed Test States
   const [isTestActive, setIsTestActive] = useState<boolean>(false);
+  const [isConfirmingCancel, setIsConfirmingCancel] = useState<boolean>(false);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [expectedDataset, setExpectedDataset] = useState<GeneratedInvoiceData[]>([]);
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({}); // pre-rendered data-urls
@@ -343,6 +381,7 @@ export default function App() {
     setCurrentIndex(0);
     setTypedValue('');
     setTestComplete(false);
+    setIsConfirmingCancel(false);
     setIsTestActive(true);
     
     // Silently preload image tag 1 in background
@@ -377,7 +416,26 @@ export default function App() {
     setCurrentIndex(0);
     setTypedValue('');
     setTestComplete(false);
+    setIsConfirmingCancel(false);
     setIsTestActive(true);
+  };
+
+  /**
+   * Emergency abort to cancel the active testing session and return to dashboard.
+   */
+  const handleCancelTestingSession = () => {
+    setIsTestActive(false);
+    setTestComplete(false);
+    setCurrentIndex(0);
+    setTypedValue('');
+    setSessionResults([]);
+    setCorrectCount(0);
+    setAverageTimeMs(0);
+    setIsConfirmingCancel(false);
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
   };
 
   /**
@@ -730,6 +788,15 @@ export default function App() {
     const avgMs = completedResults.length > 0 ? Math.round(totalMs / completedResults.length) : 0;
     setAverageTimeMs(avgMs);
 
+    const getLevelBySpeed = (timeMs: number) => {
+      const avgSec = timeMs / 1000;
+      if (avgSec <= 3.0) return 'A';
+      if (avgSec <= 4.0) return 'B';
+      if (avgSec <= 5.0) return 'C';
+      return 'D';
+    };
+    const calculatedLevel = getLevelBySpeed(avgMs);
+
     setIsSaving(true);
     setSaveError(null);
 
@@ -741,6 +808,7 @@ export default function App() {
       totalImagesAttempted: completedResults.length,
       correctEntries: finalCorrect,
       averageTimeMs: avgMs,
+      level: calculatedLevel,
       details: completedResults.map(r => ({
         imageId: r.imageId,
         expectedNumber: r.expectedNumber,
@@ -813,12 +881,17 @@ export default function App() {
 
   // Determine typing tier
   const evaluateRank = () => {
-    if (correctCount < 16) return { name: 'Tier D - Support Needed', color: 'text-rose-500 bg-rose-500/10 border-rose-500/20' };
     const avgSec = averageTimeMs / 1000;
-    if (avgSec <= 3.5) return { name: 'Tier S - Elite Master', color: 'text-amber-400 bg-amber-500/10 border-amber-500/30 font-bold animate-pulse' };
-    if (avgSec <= 4.8) return { name: 'Tier A - Professional Specialist', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' };
-    if (avgSec <= 6.0) return { name: 'Tier B - Standard Proficient', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20' };
-    return { name: 'Tier C - Below SLA Target', color: 'text-amber-500 bg-amber-500/10 border-amber-500/20' };
+    if (avgSec <= 3.0) {
+      return { name: 'Level A (Elite Expert: 2.5s ~ 3.0s)', color: 'text-emerald-600 bg-emerald-50/80 border-emerald-200 font-extrabold shadow-sm' };
+    }
+    if (avgSec <= 4.0) {
+      return { name: 'Level B (Proficient Specialist: 3.1s ~ 4.0s)', color: 'text-indigo-650 bg-indigo-50/80 border-indigo-200 font-bold' };
+    }
+    if (avgSec <= 5.0) {
+      return { name: 'Level C (Qualified Operator: 4.1s ~ 5.0s)', color: 'text-amber-650 bg-amber-50/80 border-amber-200 font-bold' };
+    }
+    return { name: 'Level D (Needs Practice: > 5.0s)', color: 'text-rose-600 bg-rose-50/80 border-rose-250 font-bold' };
   };
 
   const currentRank = evaluateRank();
@@ -1430,18 +1503,50 @@ export default function App() {
               <div className="lg:col-span-5 flex flex-col justify-between bg-white border border-slate-200 rounded-2xl p-6 shadow-sm relative overflow-hidden">
                 <div className="space-y-6">
                   {/* Title card */}
-                  <div>
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                      Data Entry Port
-                    </h3>
-                    <p className="text-[11px] text-slate-500 mt-1 uppercase font-mono tracking-wider">
-                      Target ID: {expectedDataset[currentIndex].id.toUpperCase()} Scan 
-                    </p>
-                    {/* Visual stream progress line */}
-                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-3.5">
+                  <div className="flex justify-between items-start gap-4">
+                    <div className="flex-1">
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                        Data Entry Port
+                      </h3>
+                      <p className="text-[11px] text-slate-500 mt-1 uppercase font-mono tracking-wider">
+                        Target ID: {expectedDataset[currentIndex].id.toUpperCase()} Scan 
+                      </p>
+                    </div>
+                    {!isConfirmingCancel ? (
+                      <button
+                        onClick={() => setIsConfirmingCancel(true)}
+                        className="px-3 py-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 hover:border-rose-300 rounded-lg text-xs font-bold tracking-wider uppercase cursor-pointer transition"
+                        id="abort-session-btn"
+                      >
+                        Cancel
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Abort test?</span>
+                        <button
+                          onClick={handleCancelTestingSession}
+                          className="px-2.5 py-1 bg-red-600 text-white hover:bg-red-700 rounded text-xs font-bold tracking-wider uppercase cursor-pointer transition shrink-0"
+                          id="confirm-abort-btn"
+                        >
+                          Yes, Abort
+                        </button>
+                        <button
+                          onClick={() => setIsConfirmingCancel(false)}
+                          className="px-2 py-1 bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200 rounded text-xs font-bold tracking-wider uppercase cursor-pointer transition shrink-0"
+                          id="cancel-abort-btn"
+                        >
+                          No
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Visual stream progress line */}
+                  <div className="-mt-2">
+                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                       <div 
                         className="bg-indigo-650 h-1.5 transition-all duration-300"
-                        style={{ width: `${((currentIndex + 1) / TEST_SIZE) * 100}%` }}
+                        style={{ width: `${((currentIndex + 1) / expectedDataset.length) * 100}%` }}
                       />
                     </div>
                   </div>
@@ -1533,8 +1638,8 @@ export default function App() {
             
             {/* Real-time stats header banner */}
             <StatsPanel
-              currentIndex={TEST_SIZE}
-              totalCount={TEST_SIZE}
+              currentIndex={expectedDataset.length}
+              totalCount={expectedDataset.length}
               correctCount={correctCount}
               elapsedMs={0}
               averageTimeMs={averageTimeMs}

@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, limit, getDocs, doc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, isFirebaseActive } from '../firebase';
-import { Clock, RefreshCw, Layers, Database, ChevronDown, ChevronUp, CheckCircle, XCircle, Trash2, Filter } from 'lucide-react';
+import { Clock, RefreshCw, Layers, Database, ChevronDown, ChevronUp, CheckCircle, XCircle, Trash2, Filter, Key, ShieldAlert } from 'lucide-react';
 import { TestSession, TypingDetail } from '../types';
 
 interface HistoryLogsProps {
@@ -16,15 +16,22 @@ interface HistoryLogsProps {
 }
 
 export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }: HistoryLogsProps) {
+  const [activeTab, setActiveTab] = useState<'typing' | 'login'>('typing');
   const [sessions, setSessions] = useState<TestSession[]>([]);
+  const [loginLogs, setLoginLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [expandedSessionId, setExpandedSessionId] = useState<number | null>(null);
   const [errorStatus, setErrorStatus] = useState<string | null>(null);
   const [filterUser, setFilterUser] = useState<string>('all');
+  const [filterLoginUser, setFilterLoginUser] = useState<string>('all');
 
   useEffect(() => {
-    fetchSessionHistory();
-  }, [userId, refreshTrigger, isAdmin]);
+    if (activeTab === 'typing') {
+      fetchSessionHistory();
+    } else {
+      fetchLoginHistory();
+    }
+  }, [userId, refreshTrigger, isAdmin, activeTab]);
 
   const fetchSessionHistory = async () => {
     setLoading(true);
@@ -36,8 +43,8 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
       const path = 'test_sessions';
       try {
         const queryRef = isAdmin
-          ? query(collection(db, path), orderBy('timestamp', 'desc'), limit(100))
-          : query(collection(db, path), where('userId', '==', userId), orderBy('timestamp', 'desc'), limit(30));
+          ? query(collection(db, path), orderBy('timestamp', 'desc'), limit(150))
+          : query(collection(db, path), where('userId', '==', userId), orderBy('timestamp', 'desc'), limit(50));
 
         const snapshot = await getDocs(queryRef);
         
@@ -59,6 +66,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
             totalImagesAttempted: data.totalImagesAttempted,
             correctEntries: data.correctEntries,
             averageTimeMs: data.averageTimeMs,
+            level: data.level,
             details: data.details || []
           });
         });
@@ -91,12 +99,80 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
       }
     }
 
-    // Role filtration limits
+    // Role filtration limits (Security reinforcement)
     if (!isAdmin) {
       fetchedSessions = fetchedSessions.filter(s => s.userId === userId);
     }
 
     setSessions(fetchedSessions);
+    setLoading(false);
+  };
+
+  const fetchLoginHistory = async () => {
+    setLoading(true);
+    setErrorStatus(null);
+    let fetchedLogins: any[] = [];
+
+    // 1. Fetch from Firestore if Firebase active
+    if (isFirebaseActive && db && userId && userId !== 'sandbox_guest_uid') {
+      const path = 'login_history';
+      try {
+        const queryRef = isAdmin
+          ? query(collection(db, path), orderBy('timestamp', 'desc'), limit(150))
+          : query(collection(db, path), where('username', '==', userId), orderBy('timestamp', 'desc'), limit(50));
+
+        const snapshot = await getDocs(queryRef);
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          let timestampDate: Date;
+          if (data.timestamp && typeof data.timestamp.toDate === 'function') {
+            timestampDate = data.timestamp.toDate();
+          } else if (data.timestamp) {
+            timestampDate = new Date(data.timestamp);
+          } else {
+            timestampDate = new Date();
+          }
+
+          fetchedLogins.push({
+            id: docSnap.id,
+            username: data.username || 'unknown',
+            role: data.role || 'unknown',
+            success: data.success ?? true,
+            timestamp: timestampDate,
+            userAgent: data.userAgent || 'unknown_agent'
+          });
+        });
+      } catch (err) {
+        console.warn('Unable to load login history from cloud. Fallback to local storage...', err);
+        try {
+          const localData = localStorage.getItem('local_login_history');
+          if (localData) {
+            fetchedLogins = JSON.parse(localData);
+          }
+        } catch {}
+      }
+    } else {
+      // 2. Local Fallback
+      try {
+        const localData = localStorage.getItem('local_login_history');
+        if (localData) {
+          const parsed = JSON.parse(localData);
+          fetchedLogins = parsed.map((log: any) => ({
+            ...log,
+            timestamp: new Date(log.timestamp)
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to query local login history:', err);
+      }
+    }
+
+    // Role filtration limits (Strict Security Reinforcement)
+    if (!isAdmin) {
+      fetchedLogins = fetchedLogins.filter(s => s.username === userId);
+    }
+
+    setLoginLogs(fetchedLogins);
     setLoading(false);
   };
 
@@ -127,6 +203,31 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
     fetchSessionHistory();
   };
 
+  const handleDeleteLoginLog = async (logId: string) => {
+    if (!isAdmin) return;
+
+    if (isFirebaseActive && db) {
+      try {
+        await deleteDoc(doc(db, 'login_history', logId));
+      } catch (err) {
+        console.error('Failed to delete login log from cloud:', err);
+      }
+    }
+
+    try {
+      const localData = localStorage.getItem('local_login_history');
+      if (localData) {
+        const parsed = JSON.parse(localData);
+        const filtered = parsed.filter((l: any) => l.id !== logId);
+        localStorage.setItem('local_login_history', JSON.stringify(filtered));
+      }
+    } catch (err) {
+      console.error('Failed deleting local login log:', err);
+    }
+
+    fetchLoginHistory();
+  };
+
   const toggleExpandSession = (index: number) => {
     setExpandedSessionId(expandedSessionId === index ? null : index);
   };
@@ -138,7 +239,19 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
         month: '2-digit',
         day: '2-digit',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    }
+    const d = new Date(dateValue);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('ja-JP', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
       });
     }
     return String(dateValue);
@@ -146,23 +259,57 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
 
   // Get distinct list of usernames in logs to filter of
   const distinctUsers = Array.from(new Set(sessions.map(s => s.userId))).filter(Boolean);
+  const distinctLoginUsers = Array.from(new Set(loginLogs.map(l => l.username))).filter(Boolean);
 
   const displayedSessions = filterUser === 'all' 
     ? sessions 
     : sessions.filter(s => s.userId === filterUser);
 
+  const displayedLogins = filterLoginUser === 'all'
+    ? loginLogs
+    : loginLogs.filter(l => l.username === filterLoginUser);
+
+  const getLevelBySpeed = (timeMs: number) => {
+    const avgSec = timeMs / 1000;
+    if (avgSec <= 3.0) return 'A';
+    if (avgSec <= 4.0) return 'B';
+    if (avgSec <= 5.0) return 'C';
+    return 'D';
+  };
+
   return (
     <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm" id="history-panel">
-      {/* Header */}
-      <div className="px-5 py-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-50">
-        <div className="flex items-center space-x-2">
-          <Layers className="w-5 h-5 text-indigo-600" />
-          <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Historical Typing Log</h3>
+      {/* Tabs Layout */}
+      <div className="flex border-b border-slate-200 bg-slate-50 justify-between items-center pr-4">
+        <div className="flex">
+          <button
+            onClick={() => { setActiveTab('typing'); setExpandedSessionId(null); }}
+            className={`py-3.5 px-6 text-xs font-extrabold uppercase tracking-widest border-b-2 cursor-pointer transition-all flex items-center gap-2 ${
+              activeTab === 'typing'
+                ? 'border-indigo-600 text-indigo-700 bg-white border-r border-slate-200'
+                : 'border-transparent text-slate-450 hover:text-slate-700 hover:bg-slate-100/50'
+            }`}
+          >
+            <Layers className="w-4 h-4 text-indigo-600" />
+            <span>Trainee Typing Logs</span>
+          </button>
+          <button
+            onClick={() => { setActiveTab('login'); }}
+            className={`py-3.5 px-6 text-xs font-extrabold uppercase tracking-widest border-b-2 cursor-pointer transition-all flex items-center gap-2 ${
+              activeTab === 'login'
+                ? 'border-indigo-600 text-indigo-700 bg-white border-x border-slate-200'
+                : 'border-transparent text-slate-450 hover:text-slate-700 hover:bg-slate-100/50'
+            }`}
+          >
+            <Key className="w-4 h-4 text-indigo-600" />
+            <span>Login History</span>
+          </button>
         </div>
-        
-        <div className="flex items-center gap-2">
-          {isAdmin && distinctUsers.length > 0 && (
-            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-600 shadow-sm">
+
+        {/* Global Toolbar */}
+        <div className="flex items-center gap-2.5">
+          {activeTab === 'typing' && isAdmin && distinctUsers.length > 0 && (
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-600 shadow-sm">
               <Filter className="w-3.5 h-3.5 text-slate-400" />
               <select
                 value={filterUser}
@@ -170,7 +317,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                   setFilterUser(e.target.value);
                   setExpandedSessionId(null);
                 }}
-                className="bg-transparent border-none outline-none text-xs font-bold font-sans text-slate-700 cursor-pointer"
+                className="bg-transparent border-none outline-none font-bold text-slate-700 cursor-pointer text-xs"
               >
                 <option value="all">All Trainees ({distinctUsers.length})</option>
                 {distinctUsers.map(user => (
@@ -180,11 +327,27 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
             </div>
           )}
 
+          {activeTab === 'login' && isAdmin && distinctLoginUsers.length > 0 && (
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-600 shadow-sm">
+              <Filter className="w-3.5 h-3.5 text-slate-400" />
+              <select
+                value={filterLoginUser}
+                onChange={(e) => setFilterLoginUser(e.target.value)}
+                className="bg-transparent border-none outline-none font-bold text-slate-700 cursor-pointer text-xs"
+              >
+                <option value="all">All Registries ({distinctLoginUsers.length})</option>
+                {distinctLoginUsers.map(user => (
+                  <option key={user} value={user}>Operator: {user}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <button
-            onClick={fetchSessionHistory}
+            onClick={activeTab === 'typing' ? fetchSessionHistory : fetchLoginHistory}
             disabled={loading}
             className="p-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition disabled:opacity-50 border border-slate-200 cursor-pointer"
-            title="Reload History"
+            title="Reload Active Panel Logs"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -192,134 +355,228 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
       </div>
 
       {errorStatus && (
-        <div className="bg-amber-50 text-amber-700 border-b border-slate-200 px-5 py-2 text-xs flex items-center">
+        <div className="bg-amber-50 text-amber-800 border-b border-slate-200 px-5 py-2 text-xs flex items-center">
           <Database className="w-3.5 h-3.5 mr-1" />
           <span>{errorStatus}</span>
         </div>
       )}
 
-      {/* List content */}
+      {/* Main List Box */}
       <div className="p-5" id="history-items">
-        {loading && sessions.length === 0 ? (
-          <div className="py-8 flex flex-col items-center justify-center text-slate-400 space-y-2">
+        {loading && (activeTab === 'typing' ? sessions.length === 0 : loginLogs.length === 0) ? (
+          <div className="py-12 flex flex-col items-center justify-center text-slate-400 space-y-2">
             <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600" />
-            <span className="text-xs">Loading logs...</span>
-          </div>
-        ) : displayedSessions.length === 0 ? (
-          <div className="py-12 flex flex-col items-center justify-center text-slate-400 text-center">
-            <Clock className="w-8 h-8 text-slate-300 mb-2" />
-            <span className="text-sm font-semibold text-slate-600">No matching logs found</span>
-            <span className="text-xs text-slate-500 mt-1">
-              {filterUser === 'all' 
-                ? 'Complete a 20-image test series to log your score.' 
-                : `No performance history found for selected trainee "${filterUser}"`}
-            </span>
+            <span className="text-xs font-mono">Querying historical registries...</span>
           </div>
         ) : (
-          <div className="space-y-4">
-            {displayedSessions.map((session, sIdx) => {
-              const accuracy = Math.round((session.correctEntries / session.totalImagesAttempted) * 100);
-              const isExpanded = expandedSessionId === sIdx;
-              const dateLabel = formatDate(session.timestamp);
-              
-              return (
-                <div key={sIdx} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm transition hover:border-slate-350">
-                  {/* Summary trigger line */}
-                  <div 
-                    onClick={() => toggleExpandSession(sIdx)}
-                    className="p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 cursor-pointer hover:bg-slate-50/50 transition bg-slate-50/20"
-                  >
-                    <div className="space-y-1">
-                      <div className="text-[10px] font-mono text-slate-400 flex items-center gap-2">
-                        <span>{dateLabel}</span>
-                        {session.userId && (
-                          <span className="bg-indigo-50 px-2 py-0.5 rounded text-[10px] text-indigo-700 font-bold border border-indigo-100 uppercase tracking-wider">
-                            Operator: {session.userId}
-                          </span>
-                        )}
-                        {isAdmin && (
-                          <span className="bg-emerald-50 px-1.5 py-0.2 rounded text-[9px] text-emerald-700 border border-emerald-100">Sandbox Log</span>
-                        )}
-                      </div>
-                      <div className="text-sm font-bold text-slate-800">
-                        {session.correctEntries} of {session.totalImagesAttempted} correct
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-4 w-full md:w-auto justify-between md:justify-end">
-                      <div className="flex items-center space-x-6 text-right">
-                        <div>
-                          <div className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">Mean Speed</div>
-                          <div className="text-sm font-bold text-slate-700 font-mono">{(session.averageTimeMs / 1000).toFixed(2)}s</div>
-                        </div>
-                        <div className="h-6 w-[1px] bg-slate-200" />
-                        <div>
-                          <div className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">Accuracy</div>
-                          <div className={`text-sm font-bold font-mono ${accuracy >= 95 ? 'text-emerald-600' : 'text-slate-650'}`}>{accuracy}%</div>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-2">
-                        {isAdmin && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (confirm(`Delete speed report of ${session.userId}?`)) {
-                                handleDeleteSession(session.timestamp, session.id);
-                              }
-                            }}
-                            className="p-1 px-1.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                            title="Delete speed assessment card"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Expanded Breakdown Table */}
-                  {isExpanded && (
-                    <div className="p-4 bg-slate-50 border-t border-slate-200 overflow-x-auto text-xs">
-                      <table className="w-full text-left border-collapse min-w-[500px]">
-                        <thead>
-                          <tr className="border-b border-slate-200 text-slate-400 uppercase tracking-wider font-bold text-[9px] font-mono">
-                            <th className="pb-2">ID</th>
-                            <th className="pb-2">Expected (Correct)</th>
-                            <th className="pb-2">Your Typing Entry</th>
-                            <th className="pb-2">Time Spent</th>
-                            <th className="pb-2 text-right">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-150">
-                          {session.details.map((detail, dIdx) => (
-                            <tr key={dIdx} className="hover:bg-slate-100/50 text-slate-700 font-mono transition">
-                              <td className="py-2.5 text-slate-500 font-bold">{detail.imageId.toUpperCase()}</td>
-                              <td className="py-2.5 text-slate-900 font-bold">{detail.expectedNumber}</td>
-                              <td className="py-2.5 text-slate-700">{detail.typedNumber || <span className="italic text-slate-400">[blank]</span>}</td>
-                              <td className="py-2.5">{(detail.timeSpentMs / 1000).toFixed(2)}s</td>
-                              <td className="py-2.5 text-right font-bold">
-                                {detail.isCorrect ? (
-                                  <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded text-[10px] uppercase font-bold">
-                                    <CheckCircle className="w-3 h-3 text-emerald-700" /> Match
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded text-[10px] uppercase font-bold animate-pulse">
-                                    <XCircle className="w-3 h-3 text-rose-700" /> Error
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+          <>
+            {/* TAB 1: TYPING PERFORMANCE */}
+            {activeTab === 'typing' && (
+              displayedSessions.length === 0 ? (
+                <div className="py-12 flex flex-col items-center justify-center text-slate-400 text-center">
+                  <Clock className="w-8 h-8 text-slate-300 mb-2" />
+                  <span className="text-sm font-semibold text-slate-600">No Typing Performance Records Match</span>
+                  <span className="text-xs text-slate-500 mt-1">
+                    {filterUser === 'all' 
+                      ? 'Complete a test session worksheet to record your score.' 
+                      : `No performance statistics found for trainee "${filterUser}"`}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
+              ) : (
+                <div className="space-y-4">
+                  {displayedSessions.map((session, sIdx) => {
+                    const accuracy = Math.round((session.correctEntries / session.totalImagesAttempted) * 100);
+                    const isExpanded = expandedSessionId === sIdx;
+                    const dateLabel = formatDate(session.timestamp);
+                    const lvl = getLevelBySpeed(session.averageTimeMs);
+                    
+                    return (
+                      <div key={sIdx} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm transition hover:border-slate-305">
+                        {/* Summary line */}
+                        <div 
+                          onClick={() => toggleExpandSession(sIdx)}
+                          className="p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 cursor-pointer hover:bg-slate-50/50 transition bg-slate-50/10"
+                        >
+                          <div className="space-y-1">
+                            <div className="text-[10px] font-mono text-slate-400 flex flex-wrap items-center gap-2">
+                              <span>{dateLabel}</span>
+                              {session.userId && (
+                                <span className="bg-indigo-50 px-2 py-0.5 rounded text-[10px] text-indigo-700 font-bold border border-indigo-100 uppercase tracking-wider">
+                                  Operator: {session.userId}
+                                </span>
+                              )}
+                              {isAdmin && (
+                                <span className="bg-emerald-50 px-1.5 py-0.2 rounded text-[9px] text-emerald-700 border border-emerald-100">Verified Log</span>
+                              )}
+                            </div>
+                            <div className="text-sm font-extrabold text-slate-800 flex flex-wrap items-center gap-2">
+                              <span>{session.correctEntries} of {session.totalImagesAttempted} correctly typed</span>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase border tracking-wider ml-1 ${
+                                lvl === 'A' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
+                                lvl === 'B' ? 'text-indigo-700 bg-indigo-50 border-indigo-200' :
+                                lvl === 'C' ? 'text-amber-700 bg-amber-50 border-amber-200' :
+                                'text-rose-700 bg-rose-50 border-rose-200'
+                              }`}>
+                                Level {lvl}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-4 w-full md:w-auto justify-between md:justify-end">
+                            <div className="flex items-center space-x-6 text-right font-mono">
+                              <div>
+                                <div className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">Mean Pace</div>
+                                <div className="text-xs font-bold text-slate-700">{(session.averageTimeMs / 1000).toFixed(2)}s</div>
+                              </div>
+                              <div className="h-6 w-[1px] bg-slate-200" />
+                              <div>
+                                <div className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">Accuracy</div>
+                                <div className={`text-xs font-bold ${accuracy >= 95 ? 'text-emerald-600' : 'text-slate-650'}`}>{accuracy}%</div>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                              {isAdmin && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (confirm(`Absolutely delete speed report of operator "${session.userId}"?`)) {
+                                      handleDeleteSession(session.timestamp, session.id);
+                                    }
+                                  }}
+                                  className="p-1 px-1.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                  title="Delete Session Log"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Expandable Table Details */}
+                        {isExpanded && (
+                          <div className="p-4 bg-slate-50 border-t border-slate-200 overflow-x-auto text-xs font-mono">
+                            <table className="w-full text-left border-collapse min-w-[500px]">
+                              <thead>
+                                <tr className="border-b border-slate-200 text-slate-400 uppercase tracking-wider font-bold text-[9px] pb-2">
+                                  <th className="pb-2">Invoice Code Link</th>
+                                  <th className="pb-2">Expected Number</th>
+                                  <th className="pb-2">Typing Entry</th>
+                                  <th className="pb-2">Lapse Duration</th>
+                                  <th className="pb-2 text-right">Verification</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-150">
+                                {session.details.map((detail, dIdx) => (
+                                  <tr key={dIdx} className="hover:bg-slate-100/50 text-slate-700 transition">
+                                    <td className="py-2 text-slate-500 font-bold">{detail.imageId.toUpperCase()}</td>
+                                    <td className="py-2 text-slate-900 font-extrabold">{detail.expectedNumber}</td>
+                                    <td className="py-2 text-slate-800">{detail.typedNumber || <span className="italic text-slate-400">[blank]</span>}</td>
+                                    <td className="py-2">{(detail.timeSpentMs / 1000).toFixed(2)}s</td>
+                                    <td className="py-2 text-right">
+                                      {detail.isCorrect ? (
+                                        <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px] uppercase font-bold">
+                                          <CheckCircle className="w-3 h-3 text-emerald-700" /> Match
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 px-2 py-0.5 rounded text-[10px] uppercase font-bold">
+                                          <XCircle className="w-3 h-3 text-rose-700" /> Error
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            )}
+
+            {/* TAB 2: LOGIN HISTORY */}
+            {activeTab === 'login' && (
+              displayedLogins.length === 0 ? (
+                <div className="py-12 flex flex-col items-center justify-center text-slate-400 text-center">
+                  <Key className="w-8 h-8 text-slate-300 mb-2" />
+                  <span className="text-sm font-semibold text-slate-600">No Authentication Log Records Found</span>
+                  <span className="text-xs text-slate-500 mt-1">
+                    Sign in with your operator credentials to create logs.
+                  </span>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs font-mono border-collapse min-w-[600px]">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-450 uppercase pb-3 text-[10px] font-bold">
+                        <th className="pb-3 text-left">Timestamp (Date/Time)</th>
+                        <th className="pb-3">Operator Username</th>
+                        <th className="pb-3">Session Role</th>
+                        <th className="pb-3">Status</th>
+                        <th className="pb-3">Device Agent Info</th>
+                        {isAdmin && <th className="pb-3 text-right">Actions</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150">
+                      {displayedLogins.map((lg, idx) => (
+                        <tr key={lg.id || idx} className="hover:bg-slate-50 transition text-slate-700">
+                          <td className="py-3.5 text-slate-500 font-semibold">{formatDate(lg.timestamp)}</td>
+                          <td className="py-3.5">
+                            <span className="bg-slate-100/80 text-slate-800 px-2.5 py-1 rounded-md font-extrabold uppercase text-[10px] border border-slate-200 leading-none">
+                              {lg.username}
+                            </span>
+                          </td>
+                          <td className="py-3.5">
+                            <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${
+                              lg.role === 'admin' 
+                                ? 'text-amber-850 bg-amber-50 border-amber-200' 
+                                : 'text-blue-800 bg-blue-50 border-blue-200'
+                            }`}>
+                              {lg.role}
+                            </span>
+                          </td>
+                          <td className="py-3.5">
+                            {lg.success ? (
+                              <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-250 px-2 py-0.5 rounded text-[10px] uppercase font-bold">
+                                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> SUCCESS
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-800 border border-rose-250 px-2 py-0.5 rounded text-[10px] uppercase font-bold">
+                                <ShieldAlert className="w-3.5 h-3.5 text-rose-600" /> BLOCKED/FAILED
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 text-slate-450 text-[10px] max-w-[200px] truncate" title={lg.userAgent}>
+                            {lg.userAgent}
+                          </td>
+                          {isAdmin && (
+                            <td className="py-3.5 text-right">
+                              <button
+                                onClick={() => {
+                                  if (confirm('Permanently wipe this authentication event entry?')) {
+                                    handleDeleteLoginLog(lg.id);
+                                  }
+                                }}
+                                className="p-1 px-2 rounded hover:text-rose-600 hover:bg-rose-50/55 text-slate-400 transition cursor-pointer"
+                                title="Wipe Log Row"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            )}
+          </>
         )}
       </div>
     </div>

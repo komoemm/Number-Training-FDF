@@ -26,6 +26,10 @@
           "type": "number",
           "description": "The average high-precision typing time across all entries in milliseconds."
         },
+        "level": {
+          "type": "string",
+          "description": "Performance speed evaluation level (A, B, C, D)."
+        },
         "details": {
           "type": "array",
           "description": "Detailed breakdowns for each individual image typed during the session."
@@ -114,6 +118,44 @@
         "companyName",
         "customImageUrl"
       ]
+    },
+    "login_history": {
+      "title": "LoginHistory",
+      "description": "An operator authentication event log entry.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique log item identifier."
+        },
+        "username": {
+          "type": "string",
+          "description": "The operator identifier supplied for login."
+        },
+        "role": {
+          "type": "string",
+          "description": "Role of the user at the login event moment."
+        },
+        "success": {
+          "type": "boolean",
+          "description": "True if credentials were verified successfully."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the sign-in event."
+        },
+        "userAgent": {
+          "type": "string",
+          "description": "Browser identity agent of the log initiator workstation."
+        }
+      },
+      "required": [
+        "id",
+        "username",
+        "role",
+        "success"
+      ]
     }
   },
   "firestore": {
@@ -128,6 +170,10 @@
     "/custom_invoices/{invoiceId}": {
       "schema": "custom_invoice",
       "description": "Global custom invoices shared with sandbox practitioners."
+    },
+    "/login_history/{logId}": {
+      "schema": "login_history",
+      "description": "Secure sign-in monitoring registries tracked across sessions."
     }
   }
 }

@@ -49,10 +49,9 @@ service cloud.firestore {
     function isValidLoginHistory(log) {
       return log.username is string
         && log.username.size() >= 1
-        && log.username.size() <= 64
         && log.role is string
         && log.success is bool
-        && log.userAgent is string;
+        && (!log.keys().hasAll(['userAgent']) || log.userAgent is string);
     }
 
     // Rules for test_sessions collection

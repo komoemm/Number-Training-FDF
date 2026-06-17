@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, auth, isFirebaseActive, handleFirestoreError, OperationType } from './firebase';
 import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, doc, setDoc, getDocs, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, setDoc, getDocs, deleteDoc, serverTimestamp, query, where, orderBy, limit } from 'firebase/firestore';
 import { generateDataset, renderReceiptToDataUrl } from './utils/receiptGenerator';
 import { GeneratedInvoiceData, TypingDetail, TestSession } from './types';
 import InvoiceViewer from './components/InvoiceViewer';
@@ -16,7 +16,7 @@ import LoginScreen from './components/LoginScreen';
 import { 
   Zap, Keyboard, ShieldAlert, CheckCircle2, ChevronRight, ChevronLeft,
   RotateCcw, LogIn, LogOut, HelpCircle, Trophy, BarChart2, Check, X, Bookmark,
-  Clock, Database, Upload, Play, Trash2, Plus, FileImage, Edit
+  Clock, Database, Upload, Play, Trash2, Plus, FileImage, Edit, Award
 } from 'lucide-react';
 
 const TEST_SIZE = 20;
@@ -92,14 +92,18 @@ export default function App() {
 
     // 2. Firestore cloud storage
     if (isFirebaseActive && db) {
+      const pathCol = 'login_history';
       try {
-        const pathCol = 'login_history';
         await setDoc(doc(db, pathCol, logId), {
           ...logEntry,
           timestamp: serverTimestamp()
         });
       } catch (err) {
-        console.error('Failed writing login log to Firestore:', err);
+        try {
+          handleFirestoreError(err, OperationType.WRITE, `${pathCol}/${logId}`);
+        } catch (wrappedErr: any) {
+          console.error('Failed writing login log to Firestore:', wrappedErr.message);
+        }
       }
     }
   };
@@ -363,6 +367,91 @@ export default function App() {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [cheatTriggerMsg, setCheatTriggerMsg] = useState<string | null>(null);
+  const [latestSessionByMe, setLatestSessionByMe] = useState<any>(null);
+
+  useEffect(() => {
+    if (!currentOfflineUser) {
+      setLatestSessionByMe(null);
+      return;
+    }
+    const loadLatestSession = async () => {
+      const activeUserId = currentOfflineUser.username;
+      
+      // Try local fallback first
+      let localLatest: any = null;
+      try {
+        const localData = localStorage.getItem('local_test_sessions');
+        if (localData) {
+          const sList = JSON.parse(localData);
+          const filtered = sList.filter((s: any) => s.userId === activeUserId);
+          if (filtered.length > 0) {
+            localLatest = filtered[0];
+          }
+        }
+      } catch (err) {
+        console.error('Error loading latest local session:', err);
+      }
+      
+      if (isFirebaseActive && db && activeUserId !== 'sandbox_guest_uid') {
+        try {
+          const path = 'test_sessions';
+          const queryRef = query(
+            collection(db, path),
+            where('userId', '==', activeUserId),
+            orderBy('timestamp', 'desc'),
+            limit(1)
+          );
+          const snapshot = await getDocs(queryRef);
+          if (!snapshot.empty) {
+            const firstDoc = snapshot.docs[0].data();
+            let timestampDate: Date;
+            if (firstDoc.timestamp && typeof firstDoc.timestamp.toDate === 'function') {
+              timestampDate = firstDoc.timestamp.toDate();
+            } else if (firstDoc.timestamp) {
+              timestampDate = new Date(firstDoc.timestamp);
+            } else {
+              timestampDate = new Date();
+            }
+            // Classify speed level
+            const avgSec = firstDoc.averageTimeMs / 1000;
+            let computedLvl = 'D';
+            if (avgSec <= 3.0) computedLvl = 'A';
+            else if (avgSec <= 4.0) computedLvl = 'B';
+            else if (avgSec <= 5.0) computedLvl = 'C';
+
+            setLatestSessionByMe({
+              ...firstDoc,
+              id: snapshot.docs[0].id,
+              timestamp: timestampDate,
+              level: computedLvl
+            });
+            return;
+          }
+        } catch (err) {
+          console.error('Failed reading latest session from Firestore:', err);
+        }
+      }
+      
+      if (localLatest) {
+        const avgSec = localLatest.averageTimeMs / 1500; // default standard adjustment
+        const evaluatedAvgSec = localLatest.averageTimeMs / 1000;
+        let computedLvl = 'D';
+        if (evaluatedAvgSec <= 3.0) computedLvl = 'A';
+        else if (evaluatedAvgSec <= 4.0) computedLvl = 'B';
+        else if (evaluatedAvgSec <= 5.0) computedLvl = 'C';
+
+        setLatestSessionByMe({
+          ...localLatest,
+          timestamp: new Date(localLatest.timestamp),
+          level: computedLvl
+        });
+      } else {
+        setLatestSessionByMe(null);
+      }
+    };
+    
+    loadLatestSession();
+  }, [currentOfflineUser, refreshTrigger]);
 
   const fetchSandboxUsers = async () => {
     if (isFirebaseActive && db) {
@@ -1628,6 +1717,73 @@ export default function App() {
             {/* Workplace Context parameters / Guest Fallback help */}
             <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between shadow-sm animate-fade-in">
               <div className="space-y-4">
+                {/* 1. Trainee Last Result Card (Fulfills Request #1) */}
+                <div className="border-b border-slate-150 pb-5 mb-1">
+                  <div className="flex items-center space-x-2 text-indigo-650 font-bold text-xs uppercase tracking-widest">
+                    <Award className="w-4 h-4 text-indigo-600" />
+                    <span>Your Latest Speed Run</span>
+                  </div>
+                  {latestSessionByMe ? (
+                    <div className="mt-3 bg-gradient-to-br from-indigo-50/50 to-white border border-indigo-150 rounded-xl p-4 space-y-3.5 shadow-sm">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">
+                            Average Pace
+                          </span>
+                          <span className="block text-2xl font-bold text-slate-800 mt-1 font-mono">
+                            {(latestSessionByMe.averageTimeMs / 1000).toFixed(2)}s
+                          </span>
+                        </div>
+                        {/* Level badge */}
+                        <div className="text-right">
+                          <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">
+                            Rank Level
+                          </span>
+                          <span className={`inline-block text-[10px] px-2 py-0.5 rounded font-extrabold uppercase mt-1 ${
+                            latestSessionByMe.level === 'A' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                            latestSessionByMe.level === 'B' ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' :
+                            latestSessionByMe.level === 'C' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                            'bg-rose-100 text-rose-800 border border-rose-200'
+                          }`}>
+                            Level {latestSessionByMe.level || 'D'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-indigo-100 font-sans">
+                        <div>
+                          <span className="text-slate-400">Accuracy:</span>{' '}
+                          <strong className="text-slate-700 font-mono font-bold">
+                            {latestSessionByMe.totalImagesAttempted > 0 
+                              ? Math.round((latestSessionByMe.correctEntries / latestSessionByMe.totalImagesAttempted) * 100) 
+                              : 100}%
+                          </strong>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-slate-400">Entries:</span>{' '}
+                          <strong className="text-slate-700 font-mono">
+                            {latestSessionByMe.correctEntries}/{latestSessionByMe.totalImagesAttempted}
+                          </strong>
+                        </div>
+                      </div>
+
+                      <div className="text-[9px] text-slate-400 font-mono text-center flex items-center justify-center gap-1 leading-none">
+                        <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                        <span>Achieved: {new Date(latestSessionByMe.timestamp).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 bg-slate-50 border border-dashed border-slate-200 rounded-xl p-4 text-center">
+                      <p className="text-xs text-slate-500 font-medium leading-normal">
+                        No assessment scoring found for <strong>{currentOfflineUser.username}</strong> on this workstation yet.
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+                        Execute a 20-Invoice typing list below to record your performance.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex items-center space-x-2 text-indigo-600">
                   <Database className="w-4 h-4" />
                   <span className="text-xs font-bold uppercase tracking-widest">Storage & Analytics</span>

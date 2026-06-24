@@ -6,8 +6,10 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, limit, getDocs, doc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, isFirebaseActive } from '../firebase';
-import { Clock, RefreshCw, Layers, Database, ChevronDown, ChevronUp, CheckCircle, XCircle, Trash2, Filter, Key, ShieldAlert, Trophy, Award, TrendingUp } from 'lucide-react';
+import { Clock, RefreshCw, Layers, Database, ChevronDown, ChevronUp, CheckCircle, XCircle, Trash2, Filter, Key, ShieldAlert, Trophy, Award, TrendingUp, Download } from 'lucide-react';
 import { TestSession, TypingDetail } from '../types';
+import { generateCertificatePDF } from '../utils/pdfGenerator';
+import { generateCertificateHTML } from '../utils/htmlGenerator';
 
 interface HistoryLogsProps {
   userId: string;
@@ -793,7 +795,41 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                                   </div>
                                 );
                               })()}
-                              {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const avgSec = session.averageTimeMs / 1000;
+                                  let rankStr = 'Level D (Needs Practice: > 5.0s)';
+                                  if (avgSec <= 3.0) rankStr = 'Level A (Elite Expert: 2.5s ~ 3.0s)';
+                                  else if (avgSec <= 4.0) rankStr = 'Level B (Proficient Specialist: 3.1s ~ 4.0s)';
+                                  else if (avgSec <= 5.0) rankStr = 'Level C (Qualified Operator: 4.1s ~ 5.0s)';
+                                  
+                                  generateCertificatePDF(session, lvl, rankStr);
+                                }}
+                                className="p-1 px-2 rounded text-emerald-700 bg-emerald-50 hover:text-emerald-800 hover:bg-emerald-100 border border-emerald-150 transition cursor-pointer flex items-center gap-1 text-[10px] font-sans font-bold uppercase shrink-0"
+                                title="Download PDF Certificate"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">PDF</span>
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const avgSec = session.averageTimeMs / 1000;
+                                  let rankStr = 'Level D (Needs Practice: > 5.0s)';
+                                  if (avgSec <= 3.0) rankStr = 'Level A (Elite Expert: 2.5s ~ 3.0s)';
+                                  else if (avgSec <= 4.0) rankStr = 'Level B (Proficient Specialist: 3.1s ~ 4.0s)';
+                                  else if (avgSec <= 5.0) rankStr = 'Level C (Qualified Operator: 4.1s ~ 5.0s)';
+                                  
+                                  generateCertificateHTML(session, lvl, rankStr);
+                                }}
+                                className="p-1 px-2 rounded text-blue-700 bg-blue-50 hover:text-blue-800 hover:bg-blue-100 border border-blue-150 transition cursor-pointer flex items-center gap-1 text-[10px] font-sans font-bold uppercase shrink-0"
+                                title="Download HTML Certificate & Evidence Log"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">HTML</span>
+                              </button>
+                              {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400 font-bold" /> : <ChevronDown className="w-4 h-4 text-slate-400 font-bold" />}
                             </div>
                           </div>
                         </div>

@@ -5,7 +5,7 @@
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 export enum OperationType {
@@ -52,6 +52,11 @@ if (isFirebaseActive) {
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     db = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined);
     auth = getAuth(app);
+    
+    // Enable multi-tab or single-tab offline persistence for seamless local operation
+    enableIndexedDbPersistence(db).catch((err) => {
+      console.warn('Firestore offline persistence warning/fallback:', err.code);
+    });
   } catch (error) {
     console.error('Failed to initialize Firebase SDK:', error);
   }

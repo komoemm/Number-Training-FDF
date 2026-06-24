@@ -8,6 +8,8 @@ import { db, auth, isFirebaseActive, handleFirestoreError, OperationType } from 
 import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { collection, doc, setDoc, getDocs, deleteDoc, serverTimestamp, query, where, orderBy, limit } from 'firebase/firestore';
 import { generateDataset, renderReceiptToDataUrl } from './utils/receiptGenerator';
+import { generateCertificatePDF } from './utils/pdfGenerator';
+import { generateCertificateHTML } from './utils/htmlGenerator';
 import { GeneratedInvoiceData, TypingDetail, TestSession } from './types';
 import InvoiceViewer from './components/InvoiceViewer';
 import StatsPanel from './components/StatsPanel';
@@ -16,7 +18,7 @@ import LoginScreen from './components/LoginScreen';
 import { 
   Zap, Keyboard, ShieldAlert, CheckCircle2, ChevronRight, ChevronLeft,
   RotateCcw, LogIn, LogOut, HelpCircle, Trophy, BarChart2, Check, X, Bookmark,
-  Clock, Database, Upload, Play, Trash2, Plus, FileImage, Edit, Award
+  Clock, Database, Upload, Play, Trash2, Plus, FileImage, Edit, Award, Download
 } from 'lucide-react';
 
 const TEST_SIZE = 20;
@@ -1051,8 +1053,8 @@ export default function App() {
       console.error('Failed writing locally:', err);
     }
 
-    // 2. Safely upload to Firestore if Connected & Authenticated
-    if (isFirebaseActive && db && currentUser && activeUserId !== 'sandbox_guest_uid') {
+    // 2. Safely upload to Firestore if Connected & Authenticated in Sandbox
+    if (isFirebaseActive && db && currentOfflineUser && activeUserId !== 'sandbox_guest_uid') {
       const pathCollection = 'test_sessions';
       const newSessionDocId = `session_${now.getTime()}`;
 
@@ -1107,6 +1109,46 @@ export default function App() {
       return { name: 'Level C (Qualified Operator: 4.1s ~ 5.0s)', color: 'text-amber-650 bg-amber-50/80 border-amber-200 font-bold' };
     }
     return { name: 'Level D (Needs Practice: > 5.0s)', color: 'text-rose-600 bg-rose-50/80 border-rose-250 font-bold' };
+  };
+
+  const handleDownloadPDF = () => {
+    const avgSec = averageTimeMs / 1000;
+    let levelCode = 'D';
+    if (avgSec <= 3.0) levelCode = 'A';
+    else if (avgSec <= 4.0) levelCode = 'B';
+    else if (avgSec <= 5.0) levelCode = 'C';
+
+    const testSessionPayload: TestSession = {
+      userId: currentOfflineUser ? currentOfflineUser.username : 'guest',
+      timestamp: new Date(),
+      totalImagesAttempted: expectedDataset.length,
+      correctEntries: correctCount,
+      averageTimeMs: averageTimeMs,
+      level: levelCode,
+      details: sessionResults
+    };
+
+    generateCertificatePDF(testSessionPayload, levelCode, currentRank.name);
+  };
+
+  const handleDownloadHTML = () => {
+    const avgSec = averageTimeMs / 1000;
+    let levelCode = 'D';
+    if (avgSec <= 3.0) levelCode = 'A';
+    else if (avgSec <= 4.0) levelCode = 'B';
+    else if (avgSec <= 5.0) levelCode = 'C';
+
+    const testSessionPayload: TestSession = {
+      userId: currentOfflineUser ? currentOfflineUser.username : 'guest',
+      timestamp: new Date(),
+      totalImagesAttempted: expectedDataset.length,
+      correctEntries: correctCount,
+      averageTimeMs: averageTimeMs,
+      level: levelCode,
+      details: sessionResults
+    };
+
+    generateCertificateHTML(testSessionPayload, levelCode, currentRank.name);
   };
 
   const currentRank = evaluateRank();
@@ -2053,18 +2095,32 @@ export default function App() {
 
                 <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
                   <button
+                    onClick={handleDownloadPDF}
+                    className="px-5 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-md cursor-pointer text-sm uppercase tracking-wider shrink-0"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download PDF Result</span>
+                  </button>
+                  <button
+                    onClick={handleDownloadHTML}
+                    className="px-5 py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-md cursor-pointer text-sm uppercase tracking-wider shrink-0"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download HTML Result</span>
+                  </button>
+                  <button
                     onClick={startTestingSession}
-                    className="px-6 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-sm cursor-pointer text-sm uppercase tracking-wider"
+                    className="px-5 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-sm cursor-pointer text-sm uppercase tracking-wider"
                   >
                     <RotateCcw className="w-4 h-4" />
-                    <span>Run Another Worksheet Test</span>
+                    <span>Run Again</span>
                   </button>
                   <button
                     onClick={() => {
                       setTestComplete(false);
                       setIsTestActive(false);
                     }}
-                    className="px-6 py-3.5 bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-bold transition flex items-center justify-center border border-slate-205 gap-1.5 cursor-pointer text-sm"
+                    className="px-5 py-3.5 bg-white hover:bg-slate-50 text-slate-705 rounded-xl font-bold transition flex items-center justify-center border border-slate-200 gap-1.5 cursor-pointer text-sm font-sans"
                   >
                     <span>Return to Configuration</span>
                   </button>

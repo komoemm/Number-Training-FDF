@@ -21,7 +21,7 @@ service cloud.firestore {
       return session.userId is string 
         && session.totalImagesAttempted is int 
         && session.totalImagesAttempted >= 0 
-        && session.totalImagesAttempted <= 100
+        && session.totalImagesAttempted <= 250
         && session.correctEntries is int 
         && session.correctEntries >= 0 
         && session.correctEntries <= session.totalImagesAttempted
@@ -30,7 +30,12 @@ service cloud.firestore {
         && session.averageTimeMs <= 60000.0 // Reasonable speed ceiling
         && session.timestamp == request.time // Enforce server timestamp
         && session.details is list 
-        && session.details.size() <= 100;
+        && session.details.size() <= 250
+        && (!session.keys().hasAll(['trainingMode']) || (session.trainingMode is string && session.trainingMode.size() <= 32))
+        && (!session.keys().hasAll(['operatorId']) || (session.operatorId is string && session.operatorId.size() <= 64))
+        && (!session.keys().hasAll(['averageSpeed']) || (session.averageSpeed is number && session.averageSpeed >= 0.0))
+        && (!session.keys().hasAll(['accuracy']) || (session.accuracy is number && session.accuracy >= 0.0 && session.accuracy <= 100.0))
+        && (!session.keys().hasAll(['level']) || (session.level is string && session.level.size() <= 10));
     }
 
     function isValidSandboxUser(user) {

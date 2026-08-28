@@ -17,6 +17,10 @@ export function generateCertificateHTML(session: TestSession, level: string, ran
   const accuracyPercent = totalAttempted > 0 ? Math.round((correctCount / totalAttempted) * 100) : 100;
   const averagePaceSec = (session.averageTimeMs / 1000).toFixed(2);
   const qualifiesSLA = (session.averageTimeMs <= 6000) && (accuracyPercent >= 95);
+  const isHardMode = session.trainingMode === 'hard_180' || totalAttempted > 90;
+  const isNormalMode = session.trainingMode === 'normal_90' || (totalAttempted > 20 && !isHardMode);
+  const modeLabel = isHardMode ? 'Hard Mode (180 Invoices Extreme Endurance)' : isNormalMode ? 'Normal Mode (90 Invoices Official Assessment)' : 'Easy Mode (20 Invoices Practice Benchmark)';
+  const modeBadgeColor = isHardMode ? 'bg-purple-100 text-purple-800 border-purple-300' : isNormalMode ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200';
 
   let parsedDate = 'Unknown Date/Time';
   if (session.timestamp) {
@@ -140,6 +144,12 @@ export function generateCertificateHTML(session: TestSession, level: string, ran
 
         <p class="text-sm italic text-slate-500">This document verifies that trainee operator</p>
         <p class="text-3xl font-extrabold text-indigo-600 mt-3 tracking-wide">${traineeName}</p>
+        <div class="mt-2 flex items-center justify-center">
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold uppercase border tracking-wider ${modeBadgeColor}">
+            <span class="w-2 h-2 rounded-full ${isNormalMode ? 'bg-blue-600' : 'bg-emerald-600'}"></span>
+            ${modeLabel}
+          </span>
+        </div>
         
         <div class="max-w-xl mx-auto text-xs md:text-sm text-slate-600 mt-6 leading-relaxed">
           has successfully executed the high-speed Japanese corporate tax invoicing speed test, completing digit transcription 

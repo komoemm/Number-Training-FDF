@@ -5,6 +5,8 @@
 
 import { Timestamp } from 'firebase/firestore';
 
+export type TrainingMode = 'easy_20' | 'normal_90' | 'hard_180';
+
 export interface TypingDetail {
   imageId: string;
   expectedNumber: string;
@@ -16,12 +18,27 @@ export interface TypingDetail {
 export interface TestSession {
   id?: string;
   userId: string;
+  operatorId?: string;
   timestamp: Date | Timestamp | string;
   totalImagesAttempted: number;
   correctEntries: number;
   averageTimeMs: number;
+  averageSpeed?: number;
+  accuracy?: number;
   level?: string;
+  trainingMode?: TrainingMode;
   details: TypingDetail[];
+}
+
+export interface LeaderboardEntry {
+  userId: string;
+  operatorId?: string;
+  bestTimeMs: number;
+  level: string;
+  accuracy: number;
+  totalRuns: number;
+  timestamp: Date | Timestamp | string;
+  trainingMode: TrainingMode;
 }
 
 export type DifficultyLevel = 'easy' | 'medium' | 'hard';

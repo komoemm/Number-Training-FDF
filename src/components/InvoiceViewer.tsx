@@ -63,6 +63,7 @@ export default function InvoiceViewer({ currentInvoice, onImageLoaded, isLoading
           <button
             onClick={handleZoomOut}
             title="Zoom Out"
+            aria-label="Zoom out document"
             className="p-1 px-2.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 transition text-xs flex items-center gap-1 border border-slate-200 cursor-pointer"
           >
             <ZoomOut className="w-3.5 h-3.5" />
@@ -70,7 +71,8 @@ export default function InvoiceViewer({ currentInvoice, onImageLoaded, isLoading
           
           <button
             onClick={handleZoomIn}
-            title="Zoom"
+            title="Zoom In"
+            aria-label="Zoom in document"
             className="p-1 px-2.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 transition text-xs flex items-center gap-1 border border-slate-200 cursor-pointer"
           >
             <ZoomIn className="w-3.5 h-3.5" />
@@ -81,18 +83,21 @@ export default function InvoiceViewer({ currentInvoice, onImageLoaded, isLoading
           {/* Contrast Mode Selector */}
           <button
             onClick={() => setFilterMode('normal')}
+            aria-label="Standard display filter"
             className={`p-1 px-2 text-[10px] uppercase font-bold rounded border cursor-pointer transition ${filterMode === 'normal' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'}`}
           >
             Std
           </button>
           <button
             onClick={() => setFilterMode('high_contrast')}
+            aria-label="High contrast monochrome filter"
             className={`p-1 px-2 text-[10px] uppercase font-bold rounded border cursor-pointer transition ${filterMode === 'high_contrast' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'}`}
           >
             Mono
           </button>
           <button
             onClick={() => setFilterMode('invert')}
+            aria-label="Invert colors filter"
             className={`p-1 px-2 text-[10px] uppercase font-bold rounded border cursor-pointer transition ${filterMode === 'invert' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'}`}
           >
             Invert

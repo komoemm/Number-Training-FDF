@@ -2,12 +2,16 @@
   "entities": {
     "test_session": {
       "title": "TestSession",
-      "description": "A recording of an employee's typing speed and accuracy test session.",
+      "description": "A recording of an employee's typing speed and accuracy test session (supports Practice 20, Official 90, and Hard 180 endurance modes).",
       "type": "object",
       "properties": {
         "userId": {
           "type": "string",
-          "description": "Firebase Auth UID of the employee who took the test."
+          "description": "Firebase Auth UID or operator username of the employee who took the test."
+        },
+        "operatorId": {
+          "type": "string",
+          "description": "Human-readable trainee or administrator operator identifier."
         },
         "timestamp": {
           "type": "string",
@@ -16,7 +20,7 @@
         },
         "totalImagesAttempted": {
           "type": "integer",
-          "description": "Total number of typing entries attempted during the session."
+          "description": "Total number of typing entries attempted during the session (up to 250)."
         },
         "correctEntries": {
           "type": "integer",
@@ -26,9 +30,21 @@
           "type": "number",
           "description": "The average high-precision typing time across all entries in milliseconds."
         },
+        "averageSpeed": {
+          "type": "number",
+          "description": "The average typing speed in seconds per invoice."
+        },
+        "accuracy": {
+          "type": "number",
+          "description": "Overall percentage of correct character entries (0-100)."
+        },
         "level": {
           "type": "string",
           "description": "Performance speed evaluation level (A, B, C, D)."
+        },
+        "trainingMode": {
+          "type": "string",
+          "description": "Selected training tier mode (easy_20, normal_90, hard_180)."
         },
         "details": {
           "type": "array",

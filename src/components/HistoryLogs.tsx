@@ -10,6 +10,7 @@ import { Clock, RefreshCw, Layers, Database, ChevronDown, ChevronUp, CheckCircle
 import { TestSession, TypingDetail } from '../types';
 import { generateCertificatePDF } from '../utils/pdfGenerator';
 import { generateCertificateHTML } from '../utils/htmlGenerator';
+import { SpeedDashboard } from './StatsPanel';
 
 interface HistoryLogsProps {
   userId: string;
@@ -66,12 +67,16 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
 
           fetchedSessions.push({
             id: docSnap.id,
-            userId: data.userId || 'unknown',
+            userId: data.userId || data.operatorId || 'unknown',
+            operatorId: data.operatorId || data.userId || 'unknown',
             timestamp: timestampDate,
-            totalImagesAttempted: data.totalImagesAttempted,
-            correctEntries: data.correctEntries,
-            averageTimeMs: data.averageTimeMs,
+            totalImagesAttempted: data.totalImagesAttempted || 20,
+            correctEntries: data.correctEntries ?? 0,
+            averageTimeMs: data.averageTimeMs ?? 0,
+            averageSpeed: data.averageSpeed ?? (data.averageTimeMs ? +(data.averageTimeMs / 1000).toFixed(2) : 0),
+            accuracy: data.accuracy ?? (data.totalImagesAttempted > 0 ? Math.round(((data.correctEntries || 0) / data.totalImagesAttempted) * 100) : 100),
             level: data.level,
+            trainingMode: data.trainingMode || (data.totalImagesAttempted > 90 ? 'hard_180' : data.totalImagesAttempted > 20 ? 'normal_90' : 'easy_20'),
             details: data.details || []
           });
         });
@@ -96,7 +101,9 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
           fetchedSessions = parsed.map((session: any) => ({
             ...session,
             timestamp: new Date(session.timestamp),
-            userId: session.userId || 'guest'
+            userId: session.userId || session.operatorId || 'guest',
+            operatorId: session.operatorId || session.userId || 'guest',
+            trainingMode: session.trainingMode || (session.totalImagesAttempted > 90 ? 'hard_180' : session.totalImagesAttempted > 20 ? 'normal_90' : 'easy_20')
           }));
         }
       } catch (err) {
@@ -334,9 +341,12 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
     <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm" id="history-panel">
       {/* Tabs Layout */}
       <div className="flex border-b border-slate-200 bg-slate-50 justify-between items-center pr-4">
-        <div className="flex overflow-x-auto shrink-0 font-sans">
+        <div className="flex overflow-x-auto shrink-0 font-sans" role="tablist" aria-label="History logs navigation tabs">
           <button
             onClick={() => { setActiveTab('dashboard'); }}
+            role="tab"
+            aria-selected={activeTab === 'dashboard'}
+            aria-label="Speed Dashboard Standings tab"
             className={`py-3.5 px-6 text-xs font-extrabold uppercase tracking-widest border-b-2 cursor-pointer transition-all flex items-center gap-2 shrink-0 ${
               activeTab === 'dashboard'
                 ? 'border-indigo-600 text-indigo-700 bg-white border-r border-slate-200'
@@ -348,6 +358,9 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
           </button>
           <button
             onClick={() => { setActiveTab('typing'); setExpandedSessionId(null); }}
+            role="tab"
+            aria-selected={activeTab === 'typing'}
+            aria-label="Trainee Typing Logs tab"
             className={`py-3.5 px-6 text-xs font-extrabold uppercase tracking-widest border-b-2 cursor-pointer transition-all flex items-center gap-2 shrink-0 ${
               activeTab === 'typing'
                 ? 'border-indigo-600 text-indigo-700 bg-white border-x border-slate-200'
@@ -359,6 +372,9 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
           </button>
           <button
             onClick={() => { setActiveTab('login'); }}
+            role="tab"
+            aria-selected={activeTab === 'login'}
+            aria-label="Login History registries tab"
             className={`py-3.5 px-6 text-xs font-extrabold uppercase tracking-widest border-b-2 cursor-pointer transition-all flex items-center gap-2 shrink-0 ${
               activeTab === 'login'
                 ? 'border-indigo-600 text-indigo-700 bg-white border-l border-slate-200'
@@ -377,6 +393,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
               <Filter className="w-3.5 h-3.5 text-slate-400" />
               <select
                 value={filterUser}
+                aria-label="Filter typing test logs by trainee username"
                 onChange={(e) => {
                   setFilterUser(e.target.value);
                   setExpandedSessionId(null);
@@ -396,6 +413,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
               <Filter className="w-3.5 h-3.5 text-slate-400" />
               <select
                 value={filterLoginUser}
+                aria-label="Filter login history by operator username"
                 onChange={(e) => setFilterLoginUser(e.target.value)}
                 className="bg-transparent border-none outline-none font-bold text-slate-700 cursor-pointer text-xs"
               >
@@ -410,6 +428,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
           <button
             onClick={(activeTab === 'typing' || activeTab === 'dashboard') ? fetchSessionHistory : fetchLoginHistory}
             disabled={loading}
+            aria-label="Reload Active Panel Logs"
             className="p-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition disabled:opacity-50 border border-slate-200 cursor-pointer"
             title="Reload Active Panel Logs"
           >
@@ -436,253 +455,12 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
           <>
             {/* TAB 0: CLASS SPEED DASHBOARD */}
             {activeTab === 'dashboard' && (
-              <div className="space-y-6 animate-fade-in" id="dashboard-tab-view">
-                
-                {/* 1. Header & Welcome Standings summary row */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50 border border-slate-200 p-4 rounded-xl">
-                  <div>
-                    <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 leading-none">
-                      <TrendingUp className="w-4 h-4 text-indigo-600" /> Class SLA Level Rankings
-                    </h3>
-                    <p className="text-slate-500 text-xs mt-1.5">
-                      Target Japanese bill invoicing standard speed is <strong>under 6.00 seconds</strong> per document, with ≥ 95% accuracy.
-                    </p>
-                  </div>
-                  {myDashboardEntry ? (
-                    <div className="bg-white border border-indigo-150 p-2.5 px-4 rounded-lg flex items-center gap-3.5 self-start md:self-auto shadow-sm">
-                      <div className="w-9 h-9 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 flex items-center justify-center font-bold font-sans text-sm shadow-inner">
-                        #{myRank}
-                      </div>
-                      <div className="leading-tight">
-                        <span className="block text-[9px] uppercase font-bold text-slate-405 text-slate-400">Your Peak SLA Rank</span>
-                        <span className="block text-xs font-extrabold text-slate-750 font-sans mt-0.5">
-                          {userId} (Level {myDashboardEntry.level})
-                        </span>
-                      </div>
-                      <div className="h-6 w-px bg-slate-150"></div>
-                      <div className="leading-tight">
-                        <span className="block text-[9px] uppercase font-bold text-slate-405 text-slate-400 font-sans">Best Speed</span>
-                        <span className="block text-xs font-mono font-bold text-indigo-600 mt-0.5">
-                          {(myDashboardEntry.bestTimeMs / 1000).toFixed(2)}s
-                        </span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-white border border-slate-250 p-2.5 px-4 rounded-lg self-start md:self-auto text-slate-500 text-xs">
-                      No speed sessions completed yet as <strong className="text-slate-800">{userId}</strong>. Take an assessment test to compete!
-                    </div>
-                  )}
-                </div>
-
-                {/* 2. Level Distribution Bento Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  
-                  {/* Level A Card */}
-                  <div className="bg-white border border-emerald-100 rounded-xl p-4 shadow-sm relative overflow-hidden flex flex-col justify-between">
-                    <div className="absolute -top-4 -right-4 text-emerald-500/5 select-none pointer-events-none">
-                      <Trophy className="w-24 h-24" />
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-150 px-2 py-0.5 rounded uppercase tracking-wider font-sans">
-                          Level A
-                        </span>
-                        <span className="text-xs text-slate-400 font-medium">Expert Tier</span>
-                      </div>
-                      <h4 className="text-xs font-semibold text-slate-500 mt-3 uppercase tracking-wider font-sans">Speed Ceiling</h4>
-                      <strong className="block text-slate-800 text-sm mt-0.5">Under 3.00 seconds</strong>
-                    </div>
-                    <div className="mt-5 pt-3 border-t border-slate-100 flex items-baseline justify-between">
-                      <span className="text-2xl font-bold text-slate-800 font-sans">{levelCounts.A}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        {totalTraineesCount > 0 ? Math.round((levelCounts.A / totalTraineesCount) * 100) : 0}% of operators
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-1 rounded overflow-hidden mt-2">
-                      <div className="bg-emerald-500 h-full" style={{ width: `${totalTraineesCount > 0 ? (levelCounts.A / totalTraineesCount) * 100 : 0}%` }}></div>
-                    </div>
-                  </div>
-
-                  {/* Level B Card */}
-                  <div className="bg-white border border-indigo-100 rounded-xl p-4 shadow-sm relative overflow-hidden flex flex-col justify-between">
-                    <div className="absolute -top-4 -right-4 text-indigo-500/5 select-none pointer-events-none">
-                      <Trophy className="w-24 h-24" />
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-extrabold text-indigo-805 bg-indigo-50 border border-indigo-150 px-2 py-0.5 rounded uppercase tracking-wider font-sans w-fit">
-                          Level B
-                        </span>
-                        <span className="text-xs text-slate-400 font-medium">Specialist</span>
-                      </div>
-                      <h4 className="text-xs font-semibold text-slate-500 mt-3 uppercase tracking-wider font-sans">Speed Ceiling</h4>
-                      <strong className="block text-slate-800 text-sm mt-0.5 font-sans">3.01 ~ 4.00 seconds</strong>
-                    </div>
-                    <div className="mt-5 pt-3 border-t border-slate-100 flex items-baseline justify-between">
-                      <span className="text-2xl font-bold text-slate-800 font-sans">{levelCounts.B}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        {totalTraineesCount > 0 ? Math.round((levelCounts.B / totalTraineesCount) * 100) : 0}% of operators
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-1 rounded overflow-hidden mt-2">
-                      <div className="bg-indigo-500 h-full" style={{ width: `${totalTraineesCount > 0 ? (levelCounts.B / totalTraineesCount) * 100 : 0}%` }}></div>
-                    </div>
-                  </div>
-
-                  {/* Level C Card */}
-                  <div className="bg-white border border-amber-100 rounded-xl p-4 shadow-sm relative overflow-hidden flex flex-col justify-between">
-                    <div className="absolute -top-4 -right-4 text-amber-500/5 select-none pointer-events-none">
-                      <Trophy className="w-24 h-24" />
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-extrabold text-amber-805 bg-amber-50 border border-amber-150 px-2 py-0.5 rounded uppercase tracking-wider font-sans w-fit">
-                          Level C
-                        </span>
-                        <span className="text-xs text-slate-400 font-medium">Qualified</span>
-                      </div>
-                      <h4 className="text-xs font-semibold text-slate-500 mt-3 uppercase tracking-wider font-sans">Speed Ceiling</h4>
-                      <strong className="block text-slate-800 text-sm mt-0.5 font-sans">4.01 ~ 5.00 seconds</strong>
-                    </div>
-                    <div className="mt-5 pt-3 border-t border-slate-100 flex items-baseline justify-between">
-                      <span className="text-2xl font-bold text-slate-800 font-sans">{levelCounts.C}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        {totalTraineesCount > 0 ? Math.round((levelCounts.C / totalTraineesCount) * 100) : 0}% of operators
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-1 rounded overflow-hidden mt-2">
-                      <div className="bg-amber-500 h-full" style={{ width: `${totalTraineesCount > 0 ? (levelCounts.C / totalTraineesCount) * 100 : 0}%` }}></div>
-                    </div>
-                  </div>
-
-                  {/* Level D Card */}
-                  <div className="bg-white border border-rose-100 rounded-xl p-4 shadow-sm relative overflow-hidden flex flex-col justify-between">
-                    <div className="absolute -top-4 -right-4 text-rose-500/5 select-none pointer-events-none">
-                      <Trophy className="w-24 h-24" />
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-extrabold text-rose-805 bg-rose-50 border border-rose-150 px-2 py-0.5 rounded uppercase tracking-wider font-sans w-fit">
-                          Level D
-                        </span>
-                        <span className="text-xs text-slate-400 font-medium">Practitioner</span>
-                      </div>
-                      <h4 className="text-xs font-semibold text-slate-500 mt-3 uppercase tracking-wider font-sans">Speed Standard</h4>
-                      <strong className="block text-slate-800 text-sm mt-0.5 font-sans">&gt; 5.00 seconds</strong>
-                    </div>
-                    <div className="mt-5 pt-3 border-t border-slate-100 flex items-baseline justify-between">
-                      <span className="text-2xl font-bold text-slate-800 font-sans">{levelCounts.D}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        {totalTraineesCount > 0 ? Math.round((levelCounts.D / totalTraineesCount) * 100) : 0}% of operators
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-1 rounded overflow-hidden mt-2">
-                      <div className="bg-rose-500 h-full" style={{ width: `${totalTraineesCount > 0 ? (levelCounts.D / totalTraineesCount) * 100 : 0}%` }}></div>
-                    </div>
-                  </div>
-
-                </div>
-
-                {/* 3. High-Contrast Speed Leaderboard Table Layout */}
-                <div className="bg-white border border-slate-205 rounded-xl overflow-hidden shadow-sm mt-4">
-                  <div className="bg-slate-50 px-5 py-4 border-b border-slate-205 flex items-center justify-between">
-                    <span className="text-xs font-extrabold uppercase tracking-widest text-slate-600 flex items-center gap-1.5">
-                      <Trophy className="w-4 h-4 text-amber-500 font-bold" /> Live Training Standings ({leaderboard.length} Ranked Operators)
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-mono uppercase font-bold tracking-widest">Speed Rank ascending</span>
-                  </div>
-                  {leaderboard.length === 0 ? (
-                    <div className="p-8 text-center text-slate-400">
-                      <Award className="w-8 h-8 text-slate-350 mx-auto block mb-2" />
-                      <p className="text-xs font-semibold">No Operators have registered typing speed scores yet.</p>
-                      <p className="text-[10px] text-slate-400 mt-1 max-w-sm mx-auto leading-relaxed">
-                        Invoices must be catalog-typed fully in standard mode for automatic level evaluation logging in Firestore.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs font-medium border-collapse min-w-[700px]">
-                        <thead>
-                          <tr className="border-b border-slate-200 text-slate-450 uppercase pb-3 text-[10px] font-bold bg-slate-50/45 text-slate-500 font-sans">
-                            <th className="py-3 px-5 text-left w-20">Rank</th>
-                            <th className="py-3">Trainee Operator Name</th>
-                            <th className="py-3">Level Reached</th>
-                            <th className="py-3 font-mono">Best Averaged Speed</th>
-                            <th className="py-3 font-sans">Session Accuracy</th>
-                            <th className="py-3 text-center">Total Runs</th>
-                            <th className="py-3 text-right pr-5">Achieved Date/Time</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-150 font-sans text-slate-705 text-slate-700">
-                          {leaderboard.map((entry, idx) => {
-                            const isMe = entry.userId === userId;
-                            const achievedAtLabel = formatDate(entry.timestamp);
-                            return (
-                              <tr key={entry.userId} className={`transition duration-100 ${isMe ? 'bg-indigo-50/40 hover:bg-slate-100' : 'hover:bg-slate-50'}`}>
-                                <td className="py-3.5 px-5 font-bold font-sans">
-                                  {idx === 0 ? (
-                                    <span className="flex items-center gap-1">
-                                      <Trophy className="w-4 h-4 text-amber-500 shrink-0" />
-                                      <span className="text-amber-600 font-extrabold font-sans">1st</span>
-                                    </span>
-                                  ) : idx === 1 ? (
-                                    <span className="flex items-center gap-1">
-                                      <Trophy className="w-4 h-4 text-slate-400 shrink-0" />
-                                      <span className="text-slate-500 font-extrabold font-sans">2nd</span>
-                                    </span>
-                                  ) : idx === 2 ? (
-                                    <span className="flex items-center gap-1">
-                                      <Trophy className="w-4 h-4 text-amber-750 shrink-0" />
-                                      <span className="text-amber-800 font-extrabold font-sans">3rd</span>
-                                    </span>
-                                  ) : (
-                                    <span className="text-slate-405 text-slate-400 pl-1 font-bold">{idx + 1}</span>
-                                  )}
-                                </td>
-                                <td className="py-3.5 font-bold">
-                                  <span className="flex items-center gap-1.5">
-                                    <span className="capitalize text-slate-800">{entry.userId}</span>
-                                    {isMe && (
-                                      <span className="text-[8px] bg-indigo-600 text-white font-extrabold uppercase px-1.5 py-0.5 rounded tracking-widest font-mono">
-                                        ✦ You
-                                      </span>
-                                    )}
-                                  </span>
-                                </td>
-                                <td className="py-3.5">
-                                  <span className={`inline-block text-[10px] px-2.5 py-0.5 rounded font-extrabold uppercase border tracking-wider ${
-                                    entry.level === 'A' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
-                                    entry.level === 'B' ? 'text-indigo-705 text-indigo-705 bg-indigo-50 border-indigo-200' :
-                                    entry.level === 'C' ? 'text-amber-705 text-amber-705 bg-amber-50 border-amber-200' :
-                                    'text-rose-705 text-rose-705 bg-rose-50 border-rose-200'
-                                  }`}>
-                                    Level {entry.level || 'D'}
-                                  </span>
-                                </td>
-                                <td className="py-3.5 font-mono text-slate-650 font-bold">
-                                  {(entry.bestTimeMs / 1000).toFixed(2)}s
-                                </td>
-                                <td className="py-3.5 font-semibold text-slate-600">
-                                  <span className={`${entry.accuracy >= 95 ? 'text-emerald-600 font-bold' : 'text-slate-500'}`}>
-                                    {entry.accuracy}%
-                                  </span>
-                                </td>
-                                <td className="py-3.5 text-center font-mono text-slate-505 text-slate-500 font-bold">
-                                  {entry.totalRuns}
-                                </td>
-                                <td className="py-3.5 text-right pr-5 text-[11px] text-slate-400 font-mono">
-                                  {achievedAtLabel}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-
-              </div>
+              <SpeedDashboard
+                sessions={sessions}
+                userId={userId}
+                isAdmin={isAdmin}
+                formatDate={formatDate}
+              />
             )}
 
             {/* TAB 1: TYPING PERFORMANCE */}
@@ -704,6 +482,8 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                     const isExpanded = expandedSessionId === sIdx;
                     const dateLabel = formatDate(session.timestamp);
                     const lvl = getLevelBySpeed(session.averageTimeMs);
+                    const isHardMode = session.trainingMode === 'hard_180' || session.totalImagesAttempted > 90;
+                    const isNormalMode = session.trainingMode === 'normal_90' || (session.totalImagesAttempted > 20 && !isHardMode);
                     
                     return (
                       <div key={sIdx} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm transition hover:border-slate-305">
@@ -718,6 +498,22 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                               {session.userId && (
                                 <span className="bg-indigo-50 px-2 py-0.5 rounded text-[10px] text-indigo-700 font-bold border border-indigo-100 uppercase tracking-wider">
                                   Operator: {session.userId}
+                                </span>
+                              )}
+                              {isHardMode ? (
+                                <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-[10px] font-bold border border-purple-300 uppercase tracking-wider">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
+                                  Hard (180)
+                                </span>
+                              ) : isNormalMode ? (
+                                <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-[10px] font-bold border border-blue-200 uppercase tracking-wider">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                  Normal (90)
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-bold border border-emerald-200 uppercase tracking-wider">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                  Easy (20)
                                 </span>
                               )}
                               {isAdmin && (
@@ -763,6 +559,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                                             handleDeleteSession(session.timestamp, session.id);
                                             setSessionPendingDeleteId(null);
                                           }}
+                                          aria-label="Confirm delete session"
                                           className="bg-rose-600 hover:bg-rose-700 text-white font-extrabold uppercase px-1.5 py-0.5 rounded text-[9px] transition cursor-pointer"
                                         >
                                           Sure?
@@ -772,6 +569,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                                             e.stopPropagation();
                                             setSessionPendingDeleteId(null);
                                           }}
+                                          aria-label="Cancel delete session"
                                           className="text-slate-405 hover:text-slate-650 text-[9px] font-bold uppercase transition cursor-pointer"
                                         >
                                           Cancel
@@ -786,6 +584,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                                             setSessionPendingDeleteId(curr => curr === sessionKey ? null : curr);
                                           }, 5000);
                                         }}
+                                        aria-label={`Delete session log from ${session.userId}`}
                                         className="p-1 px-1.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                                         title="Delete Session Log"
                                       >
@@ -806,6 +605,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                                   
                                   generateCertificatePDF(session, lvl, rankStr);
                                 }}
+                                aria-label={`Download PDF Performance Certificate for session taken by ${session.userId}`}
                                 className="p-1 px-2 rounded text-emerald-700 bg-emerald-50 hover:text-emerald-800 hover:bg-emerald-100 border border-emerald-150 transition cursor-pointer flex items-center gap-1 text-[10px] font-sans font-bold uppercase shrink-0"
                                 title="Download PDF Certificate"
                               >
@@ -823,13 +623,16 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                                   
                                   generateCertificateHTML(session, lvl, rankStr);
                                 }}
+                                aria-label={`Download HTML Evidence Certificate for session taken by ${session.userId}`}
                                 className="p-1 px-2 rounded text-blue-700 bg-blue-50 hover:text-blue-800 hover:bg-blue-100 border border-blue-150 transition cursor-pointer flex items-center gap-1 text-[10px] font-sans font-bold uppercase shrink-0"
                                 title="Download HTML Certificate & Evidence Log"
                               >
                                 <Download className="w-3.5 h-3.5" />
                                 <span className="hidden sm:inline">HTML</span>
                               </button>
-                              {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400 font-bold" /> : <ChevronDown className="w-4 h-4 text-slate-400 font-bold" />}
+                              <div aria-hidden="true">
+                                {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400 font-bold" /> : <ChevronDown className="w-4 h-4 text-slate-400 font-bold" />}
+                              </div>
                             </div>
                           </div>
                         </div>

@@ -1,15 +1,17 @@
-import { jsPDF } from 'jspdf';
 import { TestSession, TypingDetail } from '../types';
 
 /**
  * Generates and downloads a highly-professional, styled PDF Performance Certificate & Report 
  * for trainees who have completed the Japanese Bill Invoicing speed assessment.
+ * Dynamically loads the jsPDF engine on-demand so it doesn't inflate the initial application bundle.
  * 
  * @param session The test session results containing speed, accuracy, and details
  * @param level EVALUATION Level computed or retrieved (A, B, C, D)
  * @param rankName Formal evaluation rank name text
  */
-export function generateCertificatePDF(session: TestSession, level: string, rankName: string) {
+export async function generateCertificatePDF(session: TestSession, level: string, rankName: string): Promise<void> {
+  const { jsPDF } = await import('jspdf');
+
   // Initialize standard A4 Portrait document (210mm x 297mm)
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -52,9 +54,16 @@ export function generateCertificatePDF(session: TestSession, level: string, rank
 
   // Header Title
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
+  doc.setFontSize(9);
   doc.setTextColor(colors.grayText.r, colors.grayText.g, colors.grayText.b);
-  doc.text('BILL INVOICING TRANSCRIPTION SERVICE', pageWidth / 2, 22, { align: 'center' });
+  
+  const modeText = session.trainingMode === 'hard_180' || session.totalImagesAttempted > 90
+    ? 'EXTREME ENDURANCE ASSESSMENT (180 INVOICES)'
+    : session.trainingMode === 'normal_90' || session.totalImagesAttempted > 20
+    ? 'OFFICIAL ENDURANCE ASSESSMENT (90 INVOICES)'
+    : 'PRACTICE BENCHMARK DRILL (20 INVOICES)';
+    
+  doc.text(`BILL INVOICING TRANSCRIPTION SERVICE | ${modeText}`, pageWidth / 2, 22, { align: 'center' });
 
   doc.setFontSize(22);
   doc.setTextColor(colors.darkSlate.r, colors.darkSlate.g, colors.darkSlate.b);

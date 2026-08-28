@@ -18,7 +18,7 @@ import LoginScreen from './components/LoginScreen';
 import { 
   Zap, Keyboard, ShieldAlert, CheckCircle2, ChevronRight, ChevronLeft,
   RotateCcw, LogIn, LogOut, HelpCircle, Trophy, BarChart2, Check, X, Bookmark,
-  Clock, Database, Upload, Play, Trash2, Plus, FileImage, Edit, Award, Download
+  Clock, Database, Upload, Play, Trash2, Plus, FileImage, Edit, Award, Download, Users
 } from 'lucide-react';
 
 const TEST_SIZE = 20;
@@ -1280,49 +1280,50 @@ export default function App() {
             <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 flex flex-col justify-between shadow-sm animate-fade-in">
               <div className="space-y-6">
                 {/* Dynamic Configuration Navigation Tabs */}
-                <div className="flex border-b border-slate-200 font-sans mb-2 overflow-x-auto shrink-0 scrollbar-none" role="tablist" aria-label="Workstation setup modes">
+                <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 font-sans mb-4" role="tablist" aria-label="Workstation setup modes">
                   <button
                     onClick={() => { setActiveSetupTab('standard'); setUploadProgressError(null); }}
                     role="tab"
                     aria-selected={activeSetupTab === 'standard'}
-                    aria-label="Standard Invoicing Assessment (System Generator)"
-                    className={`pb-3 px-1 sm:px-4 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 shrink-0 ${
+                    aria-label="Standard Assessment"
+                    className={`pb-3 px-1 sm:px-3 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 shrink-0 ${
                       activeSetupTab === 'standard'
                         ? 'border-indigo-600 text-indigo-600 font-extrabold'
                         : 'border-transparent text-slate-400 hover:text-slate-600'
                     }`}
                   >
                     <Keyboard className="w-3.5 h-3.5" />
-                    <span>📋 Standard Invoicing Assessment (System Generator)</span>
+                    <span>📋 Standard Assessment</span>
                   </button>
                   <button
                     onClick={() => { setActiveSetupTab('custom'); setUploadProgressError(null); }}
                     role="tab"
                     aria-selected={activeSetupTab === 'custom'}
-                    aria-label="Custom Upload Sandbox (Enterprise Catalog)"
-                    className={`pb-3 px-1 sm:px-4 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 shrink-0 ${
+                    aria-label="Custom Sandbox"
+                    className={`pb-3 px-1 sm:px-3 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 shrink-0 ${
                       activeSetupTab === 'custom'
                         ? 'border-indigo-600 text-indigo-600 font-extrabold'
                         : 'border-transparent text-slate-400 hover:text-slate-600'
                     }`}
                   >
                     <Upload className="w-3.5 h-3.5" />
-                    <span>📤 Custom Upload Sandbox (Enterprise Catalog)</span>
+                    <span>📤 Custom Sandbox</span>
                   </button>
-                  {currentOfflineUser.role === 'admin' && (
+                  {currentOfflineUser?.role === 'admin' && (
                     <button
                       onClick={() => { setActiveSetupTab('users'); setUploadProgressError(null); }}
                       role="tab"
                       aria-selected={activeSetupTab === 'users'}
-                      aria-label="Trainee User Accounts Manager"
-                      className={`pb-3 px-1 sm:px-4 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-2 shrink-0 ${
+                      aria-label="Trainee User Accounts"
+                      className={`pb-3 px-1 sm:px-3 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-1.5 shrink-0 ${
                         activeSetupTab === 'users'
                           ? 'border-indigo-600 text-indigo-600 font-extrabold'
                           : 'border-transparent text-slate-400 hover:text-slate-600'
                       }`}
                     >
-                      <Database className="w-3.5 h-3.5" />
-                      <span>👑 Trainee User Accounts</span>
+                      <Users className="w-3.5 h-3.5" />
+                      <span>👥 Trainee User Accounts</span>
+                      <span className="ml-1 text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold uppercase">Admin</span>
                     </button>
                   )}
                 </div>

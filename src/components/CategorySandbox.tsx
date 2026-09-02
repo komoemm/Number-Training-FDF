@@ -309,6 +309,8 @@ export const CategorySandbox: React.FC<CategorySandboxProps> = ({
                           <img
                             src={inv.customImageUrl}
                             alt="Invoice thumbnail"
+                            loading="lazy"
+                            decoding="async"
                             className="object-cover w-full h-full group-hover:scale-105 transition duration-150"
                           />
                           <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-150 flex items-center justify-center">
@@ -419,6 +421,8 @@ export const CategorySandbox: React.FC<CategorySandboxProps> = ({
                           <img
                             src={inv.customImageUrl}
                             alt="Invoice thumbnail"
+                            loading="lazy"
+                            decoding="async"
                             className="object-cover w-full h-full group-hover:scale-105 transition duration-150"
                           />
                           <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-150 flex items-center justify-center">

@@ -905,23 +905,19 @@ export default function App() {
     const currentInvoice = expectedDataset[currentIndex];
     const category = currentInvoice?.category || activeTrainingCategory;
     const expectedRaw = currentInvoice?.expectedNumber || '';
+    const sanitizedExpected = expectedRaw.replace(/[^a-zA-Z0-9]/g, '');
 
     let cleaned = '';
     let targetLength = 13;
 
     if (category === 'tax_number') {
       cleaned = rawVal.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-      const hasT = expectedRaw.toUpperCase().startsWith('T');
+      const hasT = sanitizedExpected.toUpperCase().startsWith('T');
       const inputHasT = cleaned.startsWith('T');
       targetLength = (hasT && inputHasT) ? 14 : 13;
-    } else if (category === 'date_number') {
+    } else if (category === 'date_number' || category === 'phone_number') {
       cleaned = rawVal.replace(/\D/g, '');
-      const expectedDigits = expectedRaw.replace(/\D/g, '');
-      targetLength = expectedDigits.length || 8;
-    } else if (category === 'phone_number') {
-      cleaned = rawVal.replace(/\D/g, '');
-      const expectedDigitsOnly = expectedRaw.replace(/\D/g, '');
-      targetLength = expectedDigitsOnly.length || (cleaned.startsWith('0') && cleaned.length >= 10 ? cleaned.length : 10);
+      targetLength = sanitizedExpected.length;
     }
 
     setTypedValue(cleaned);
@@ -929,15 +925,15 @@ export default function App() {
     // Real-time character match feedback
     if (cleaned.length > 0) {
       if (category === 'tax_number') {
-        const sanitizedExpected = expectedRaw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-        if (sanitizedExpected.startsWith('T') && !cleaned.startsWith('T')) {
-          const withoutT = sanitizedExpected.substring(1);
+        const expectedUpper = sanitizedExpected.toUpperCase();
+        if (expectedUpper.startsWith('T') && !cleaned.startsWith('T')) {
+          const withoutT = expectedUpper.substring(1);
           setLastCharacterValid(withoutT.startsWith(cleaned));
         } else {
-          setLastCharacterValid(sanitizedExpected.startsWith(cleaned));
+          setLastCharacterValid(expectedUpper.startsWith(cleaned));
         }
       } else {
-        const sanitizedExpectedDigits = expectedRaw.replace(/\D/g, '');
+        const sanitizedExpectedDigits = sanitizedExpected.replace(/\D/g, '');
         setLastCharacterValid(sanitizedExpectedDigits.startsWith(cleaned));
       }
     } else {
@@ -2116,7 +2112,7 @@ export default function App() {
                 
                 <button 
                   onClick={() => setLabelingModalIndex(null)}
-                  aria-label="Close labeling assistant dialog"
+                  aria-label="Close Preview"
                   className="absolute top-3 right-3 text-slate-400 hover:text-white p-1 rounded-full hover:bg-slate-800 transition cursor-pointer"
                 >
                   <X className="w-4 h-4" />

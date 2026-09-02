@@ -19,7 +19,12 @@ export function generateCertificateHTML(session: TestSession, level: string, ran
   const qualifiesSLA = (session.averageTimeMs <= 6000) && (accuracyPercent >= 95);
   const isHardMode = session.trainingMode === 'hard_180' || totalAttempted > 90;
   const isNormalMode = session.trainingMode === 'normal_90' || (totalAttempted > 20 && !isHardMode);
-  const modeLabel = isHardMode ? 'Hard Mode (180 Invoices Extreme Endurance)' : isNormalMode ? 'Normal Mode (90 Invoices Official Assessment)' : 'Easy Mode (20 Invoices Practice Benchmark)';
+  const categoryLabel = session.category === 'date_number' 
+    ? 'Date Number' 
+    : session.category === 'phone_number' 
+    ? 'Phone Number' 
+    : 'Tax Number (QIN)';
+  const modeLabel = isHardMode ? `Hard Mode [${categoryLabel}] (180 Invoices Extreme Endurance)` : isNormalMode ? `Normal Mode [${categoryLabel}] (90 Invoices Official Assessment)` : `Easy Mode [${categoryLabel}] (20 Invoices Practice Benchmark)`;
   const modeBadgeColor = isHardMode ? 'bg-purple-100 text-purple-800 border-purple-300' : isNormalMode ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200';
 
   let parsedDate = 'Unknown Date/Time';

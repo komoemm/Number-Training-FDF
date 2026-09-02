@@ -32,6 +32,7 @@ service cloud.firestore {
         && session.details is list 
         && session.details.size() <= 250
         && (!session.keys().hasAll(['trainingMode']) || (session.trainingMode is string && session.trainingMode.size() <= 32))
+        && (!session.keys().hasAll(['category']) || (session.category is string && session.category.size() <= 32))
         && (!session.keys().hasAll(['operatorId']) || (session.operatorId is string && session.operatorId.size() <= 64))
         && (!session.keys().hasAll(['averageSpeed']) || (session.averageSpeed is number && session.averageSpeed >= 0.0))
         && (!session.keys().hasAll(['accuracy']) || (session.accuracy is number && session.accuracy >= 0.0 && session.accuracy <= 100.0))

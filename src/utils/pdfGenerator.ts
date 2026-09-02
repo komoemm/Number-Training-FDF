@@ -57,13 +57,19 @@ export async function generateCertificatePDF(session: TestSession, level: string
   doc.setFontSize(9);
   doc.setTextColor(colors.grayText.r, colors.grayText.g, colors.grayText.b);
   
+  const categoryLabel = session.category === 'date_number' 
+    ? 'DATE NUMBER' 
+    : session.category === 'phone_number' 
+    ? 'PHONE NUMBER' 
+    : 'TAX NUMBER (QIN)';
+
   const modeText = session.trainingMode === 'hard_180' || session.totalImagesAttempted > 90
-    ? 'EXTREME ENDURANCE ASSESSMENT (180 INVOICES)'
+    ? `EXTREME ENDURANCE ASSESSMENT [${categoryLabel}] (180 INVOICES)`
     : session.trainingMode === 'normal_90' || session.totalImagesAttempted > 20
-    ? 'OFFICIAL ENDURANCE ASSESSMENT (90 INVOICES)'
-    : 'PRACTICE BENCHMARK DRILL (20 INVOICES)';
+    ? `OFFICIAL ENDURANCE ASSESSMENT [${categoryLabel}] (90 INVOICES)`
+    : `PRACTICE BENCHMARK DRILL [${categoryLabel}] (20 INVOICES)`;
     
-  doc.text(`BILL INVOICING TRANSCRIPTION SERVICE | ${modeText}`, pageWidth / 2, 22, { align: 'center' });
+  doc.text(`JAPANESE DATA ENTRY ASSESSMENT | ${modeText}`, pageWidth / 2, 22, { align: 'center' });
 
   doc.setFontSize(22);
   doc.setTextColor(colors.darkSlate.r, colors.darkSlate.g, colors.darkSlate.b);

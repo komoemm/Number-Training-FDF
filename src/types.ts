@@ -6,6 +6,7 @@
 import { Timestamp } from 'firebase/firestore';
 
 export type TrainingMode = 'easy_20' | 'normal_90' | 'hard_180';
+export type TrainingCategory = 'tax_number' | 'date_number' | 'phone_number';
 
 export interface TypingDetail {
   imageId: string;
@@ -13,6 +14,7 @@ export interface TypingDetail {
   typedNumber: string;
   timeSpentMs: number;
   isCorrect: boolean;
+  category?: TrainingCategory;
 }
 
 export interface TestSession {
@@ -27,6 +29,7 @@ export interface TestSession {
   accuracy?: number;
   level?: string;
   trainingMode?: TrainingMode;
+  category?: TrainingCategory;
   details: TypingDetail[];
 }
 
@@ -39,6 +42,7 @@ export interface LeaderboardEntry {
   totalRuns: number;
   timestamp: Date | Timestamp | string;
   trainingMode: TrainingMode;
+  category?: TrainingCategory;
 }
 
 export type DifficultyLevel = 'easy' | 'medium' | 'hard';
@@ -46,13 +50,27 @@ export type InvoiceStyle = 'modern' | 'handwritten' | 'classic' | 'thermal_disto
 
 export interface GeneratedInvoiceData {
   id: string;
-  expectedNumber: string; // T + 13 digits
+  expectedNumber: string;
   companyName: string;
-  invoiceDate: string;
-  totalAmount: string;
-  difficulty: DifficultyLevel;
-  style: InvoiceStyle;
+  invoiceDate?: string;
+  totalAmount?: string;
+  difficulty?: DifficultyLevel;
+  style?: InvoiceStyle;
   note?: string;
+  category?: TrainingCategory;
+  customImageUrl?: string;
+}
+
+export interface CustomInvoice {
+  id: string;
+  expectedNumber: string;
+  companyName: string;
+  invoiceDate?: string;
+  totalAmount?: string;
+  difficulty?: DifficultyLevel;
+  style?: InvoiceStyle;
+  customImageUrl: string;
+  category?: TrainingCategory;
 }
 
 export interface AttemptResult {
@@ -60,4 +78,5 @@ export interface AttemptResult {
   typed: string;
   timeSpentMs: number;
   isCorrect: boolean;
+  category?: TrainingCategory;
 }

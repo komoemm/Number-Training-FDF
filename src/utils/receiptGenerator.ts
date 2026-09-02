@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { GeneratedInvoiceData, DifficultyLevel, InvoiceStyle } from '../types';
+import { GeneratedInvoiceData, DifficultyLevel, InvoiceStyle, TrainingCategory, CustomInvoice } from '../types';
 
 // Diverse lists to generate rich randomized invoice details
 const COMPANIES = [
@@ -21,7 +21,11 @@ const COMPANIES = [
   'ニッポン交易株式会社',
   '三浦オフィスサプライ株式会社',
   '平成フードサービス株式会社',
-  '極東貿易ソリューションズ'
+  '極東貿易ソリューションズ',
+  'イオンリテール株式会社',
+  'セブン＆アイ・ホールディングス',
+  'ファミリーマート東日本支社',
+  'ローソンステーション株式会社'
 ];
 
 const RECEIPTS = [
@@ -34,7 +38,7 @@ const RECEIPTS = [
 ];
 
 /**
- * Helper to generate random 13-digit string or 14-character with 'T' prefix.
+ * Helper to generate random 13-digit string with 'T' prefix.
  */
 export function generateRandomInvoiceNumber(): string {
   const digits = Array.from({ length: 13 }, () => Math.floor(Math.random() * 10)).join('');
@@ -42,44 +46,73 @@ export function generateRandomInvoiceNumber(): string {
 }
 
 /**
- * Generate a static dataset of 20 randomized invoice items.
+ * Helper to generate random 8-digit date string (YYYYMMDD).
  */
-export function generateDataset(count: number = 20): GeneratedInvoiceData[] {
-  const dataset: GeneratedInvoiceData[] = [];
-  
-  for (let i = 0; i < count; i++) {
-    const rawNum = generateRandomInvoiceNumber();
-    const id = `inv_${1001 + i}`;
-    const company = COMPANIES[i % COMPANIES.length];
-    
-    // Distribute difficulties and styles
-    let difficulty: DifficultyLevel = 'easy';
-    let style: InvoiceStyle = 'modern';
-    
-    if (i >= 5 && i < 11) {
-      difficulty = 'medium';
-      style = i % 2 === 0 ? 'classic' : 'thermal_distorted';
-    } else if (i >= 11) {
-      difficulty = 'hard';
-      style = i % 2 === 0 ? 'handwritten' : 'thermal_distorted';
-    }
+export function generateRandomDateNumber(): string {
+  const year = 2024 + Math.floor(Math.random() * 3); // 2024-2026
+  const month = String(1 + Math.floor(Math.random() * 12)).padStart(2, '0');
+  const day = String(1 + Math.floor(Math.random() * 28)).padStart(2, '0');
+  return `${year}${month}${day}`;
+}
 
-    const day = String(1 + (i * 3) % 28).padStart(2, '0');
-    const month = String(1 + (i % 12)).padStart(2, '0');
-    const totalAmount = `${(1200 + (i * 1450)).toLocaleString()}円`;
+/**
+ * Helper to generate random Japanese phone number (10 or 11 digits).
+ */
+export function generateRandomPhoneNumber(): string {
+  const prefixes = ['03', '06', '045', '052', '092', '011', '090', '080', '070'];
+  const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+  const remainingDigitsCount = (prefix.startsWith('090') || prefix.startsWith('080') || prefix.startsWith('070')) ? 8 : (10 - prefix.length);
+  const remaining = Array.from({ length: remainingDigitsCount }, () => Math.floor(Math.random() * 10)).join('');
+  return `${prefix}${remaining}`;
+}
 
-    dataset.push({
-      id,
-      expectedNumber: rawNum,
-      companyName: company,
-      invoiceDate: `2026年${month}月${day}日`,
-      totalAmount,
-      difficulty,
-      style,
-      note: i % 3 === 0 ? '※ 軽減税率対象含む' : undefined
-    });
+/**
+ * Generates a single sample custom invoice for the specified category.
+ */
+export function generateSampleCustomInvoice(category: TrainingCategory = 'tax_number', index: number = 0): CustomInvoice {
+  const company = COMPANIES[Math.floor(Math.random() * COMPANIES.length)];
+  const id = `sample_${category}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  const styles: InvoiceStyle[] = ['modern', 'classic', 'thermal_distorted'];
+  const style = styles[Math.floor(Math.random() * styles.length)];
+  const year = 2026;
+  const month = String(1 + (index % 12)).padStart(2, '0');
+  const day = String(1 + (index * 3) % 28).padStart(2, '0');
+  const invoiceDate = `${year}年${month}月${day}日`;
+  const totalAmount = `${(1200 + Math.floor(Math.random() * 8500)).toLocaleString()}円`;
+
+  let expectedNumber = '';
+  if (category === 'tax_number') {
+    expectedNumber = generateRandomInvoiceNumber();
+  } else if (category === 'date_number') {
+    expectedNumber = `${year}${month}${day}`;
+  } else {
+    expectedNumber = generateRandomPhoneNumber();
   }
-  return dataset;
+
+  const generatedData: GeneratedInvoiceData = {
+    id,
+    expectedNumber,
+    companyName: company,
+    invoiceDate,
+    totalAmount,
+    difficulty: 'easy',
+    style,
+    category
+  };
+
+  const customImageUrl = renderReceiptToDataUrl(generatedData);
+
+  return {
+    id,
+    expectedNumber,
+    companyName: company,
+    invoiceDate,
+    totalAmount,
+    difficulty: 'easy',
+    style,
+    category,
+    customImageUrl
+  };
 }
 
 /**
@@ -87,12 +120,13 @@ export function generateDataset(count: number = 20): GeneratedInvoiceData[] {
  * Returns a Data URL.
  */
 export function renderReceiptToDataUrl(data: GeneratedInvoiceData): string {
-  // Create an offscreen canvas
   const canvas = document.createElement('canvas');
   canvas.width = 480;
   canvas.height = 220;
   const ctx = canvas.getContext('2d');
   if (!ctx) return '';
+
+  const category = data.category || 'tax_number';
 
   // 1. Render thermal paper background based on style
   let paperColor = '#fdfdfb'; // clean ivory
@@ -125,7 +159,7 @@ export function renderReceiptToDataUrl(data: GeneratedInvoiceData): string {
   }
 
   // Reset fill style
-  ctx.fillStyle = '#1e293b'; // off-black/slate text color
+  ctx.fillStyle = '#1e293b';
 
   // 2. Adjust font styling based on the receipt's visual style
   let fontName = 'system-ui, sans-serif';
@@ -134,26 +168,25 @@ export function renderReceiptToDataUrl(data: GeneratedInvoiceData): string {
 
   if (data.style === 'handwritten') {
     fontName = '"Georgia", "Times New Roman", cursive';
-    textSkew = 0.02; // slight human handwritten skew
+    textSkew = 0.02;
   } else if (data.style === 'classic') {
     fontName = '"Times New Roman", "MS Mincho", serif';
   } else if (data.style === 'thermal_distorted') {
     fontName = '"Courier New", Courier, monospace';
-    blurAmount = data.difficulty === 'hard' ? 0.75 : 0.4; // Simulate blurred thermal printing
+    blurAmount = data.difficulty === 'hard' ? 0.75 : 0.3;
   }
 
   if (blurAmount > 0) {
     ctx.filter = `blur(${blurAmount}px)`;
   }
 
-  // 3. Render Invoice elements
-  // Title
-  const titleText = RECEIPTS[parseInt(data.id.replace('inv_', '')) % RECEIPTS.length];
+  // 3. Render Invoice header elements
+  const titleText = RECEIPTS[Math.abs(data.id.length) % RECEIPTS.length];
   ctx.font = `bold 16px ${fontName}`;
   ctx.textAlign = 'center';
   ctx.fillText(titleText, canvas.width / 2, 30);
 
-  // Divider lines
+  // Divider line
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -161,7 +194,7 @@ export function renderReceiptToDataUrl(data: GeneratedInvoiceData): string {
   ctx.lineTo(canvas.width - 30, 42);
   ctx.stroke();
 
-  // Left aligns: Company info, Date, Amount
+  // Company info
   ctx.textAlign = 'left';
   ctx.font = `11px ${fontName}`;
   ctx.fillStyle = '#475569';
@@ -170,7 +203,7 @@ export function renderReceiptToDataUrl(data: GeneratedInvoiceData): string {
   
   // Right aligns
   ctx.textAlign = 'right';
-  ctx.fillText(`売上伝票 No: ${data.id.toUpperCase()}`, canvas.width - 40, 65);
+  ctx.fillText(`伝票 No: ${data.id.slice(0, 10).toUpperCase()}`, canvas.width - 40, 65);
   if (data.note) {
     ctx.fillText(data.note, canvas.width - 40, 82);
   }
@@ -190,84 +223,110 @@ export function renderReceiptToDataUrl(data: GeneratedInvoiceData): string {
   ctx.font = `bold 14px ${fontName}`;
   ctx.fillText(data.totalAmount, canvas.width - 45, 115);
 
-  // 4. Render Japanese Hanko Stamp (Red company seal!) for immersion
-  // Draw it in a randomized overlapping position to look like physical stamp
-  const stampX = canvas.width - 75 + (Math.random() * 15 - 7);
-  const stampY = 120 + (Math.random() * 10 - 5);
+  // 4. Hanko Stamp for immersion
+  const stampX = canvas.width - 75;
+  const stampY = 120;
   ctx.save();
-  ctx.strokeStyle = 'rgba(239, 68, 68, 0.65)'; // Stamp red
+  ctx.strokeStyle = 'rgba(239, 68, 68, 0.65)';
   ctx.lineWidth = 2;
   ctx.translate(stampX, stampY);
-  ctx.rotate(-0.05 + Math.random() * 0.1); // slight angle
-  // Outer circle
+  ctx.rotate(-0.04);
   ctx.beginPath();
   ctx.arc(0, 0, 20, 0, Math.PI * 2);
   ctx.stroke();
-  // Double-border style occasionally
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.arc(0, 0, 17, 0, Math.PI * 2);
-  ctx.stroke();
-  // Stamp text inside
   ctx.fillStyle = 'rgba(239, 68, 68, 0.7)';
   ctx.font = '9px "MS Gothic", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('領収済', 0, -4);
-  ctx.fillText('テック', 0, 6);
+  ctx.fillText('印', 0, 6);
   ctx.restore();
 
-  // 5. RENDER THE CORE TAX / INVOICE REGISTRATION NUMBER
+  // 5. RENDER THE KEY TARGET TRANSCRIPTION HIGHLIGHT BOX
   ctx.fillStyle = '#0f172a';
   ctx.save();
 
-  // Underline box for key target code
-  ctx.fillStyle = 'rgba(241, 245, 249, 0.7)';
+  // Underline target focus box
+  ctx.fillStyle = 'rgba(241, 245, 249, 0.75)';
   ctx.fillRect(35, 145, canvas.width - 70, 48);
-  ctx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
   ctx.strokeRect(35, 145, canvas.width - 70, 48);
 
   ctx.translate(canvas.width / 2, 170);
   if (textSkew !== 0) ctx.transform(1, 0, textSkew, 1, 0, 0);
 
-  // Subtitle/Label above registration code
+  // Label above target code according to Category
   ctx.textAlign = 'center';
   ctx.fillStyle = '#64748b';
   ctx.font = `10px ${fontName}`;
-  
-  // Random labels to vary layout difficulty matching physical invoices
-  const labels = [
-    '登録番号',
-    '登録番号 [Ｔ]',
-    '適格請求書発行事業者登録番号',
-    'インボイス登録番号',
-    'T-NO.'
-  ];
-  const labelText = labels[parseInt(data.id.replace('inv_', '')) % labels.length];
+
+  let labelText = '登録番号 (Tax Number)';
+  let printedNo = data.expectedNumber;
+
+  if (category === 'tax_number') {
+    const labels = [
+      '登録番号 (Qualified Invoice No.)',
+      '適格請求書発行事業者登録番号 [Ｔ]',
+      'インボイス登録番号',
+      'T-REGISTRATION NO.'
+    ];
+    labelText = labels[Math.abs(data.id.length) % labels.length];
+    
+    // Grouping variation: T-1234-5678-90123 or T 1234 5678 90123 or raw
+    const v = Math.abs(data.id.length) % 3;
+    if (v === 1 && data.expectedNumber.startsWith('T') && data.expectedNumber.length === 14) {
+      printedNo = `T ${data.expectedNumber.slice(1, 5)} ${data.expectedNumber.slice(5, 9)} ${data.expectedNumber.slice(9)}`;
+    } else if (v === 2 && data.expectedNumber.startsWith('T') && data.expectedNumber.length === 14) {
+      printedNo = `T-${data.expectedNumber.slice(1, 5)}-${data.expectedNumber.slice(5, 9)}-${data.expectedNumber.slice(9)}`;
+    }
+  } else if (category === 'date_number') {
+    const labels = [
+      '取引年月日 (Transaction Date)',
+      '発行日付 / 売上日',
+      '領収日時 (DATE)',
+      '会計日付'
+    ];
+    labelText = labels[Math.abs(data.id.length) % labels.length];
+
+    // Format date in printed form e.g. 2026/05/22 or 2026年05月22日 or 2026-05-22
+    if (data.expectedNumber.length === 8 && /^\d{8}$/.test(data.expectedNumber)) {
+      const y = data.expectedNumber.slice(0, 4);
+      const m = data.expectedNumber.slice(4, 6);
+      const d = data.expectedNumber.slice(6, 8);
+      const v = Math.abs(data.id.length) % 3;
+      if (v === 0) printedNo = `${y}/${m}/${d}`;
+      else if (v === 1) printedNo = `${y}年${m}月${d}日`;
+      else printedNo = `${y}-${m}-${d}`;
+    }
+  } else if (category === 'phone_number') {
+    const labels = [
+      'お問合せ電話番号 (TEL)',
+      'TEL / 連絡先',
+      '店舗代表電話番号',
+      'CUSTOMER SERVICE TEL'
+    ];
+    labelText = labels[Math.abs(data.id.length) % labels.length];
+
+    // Format phone number with hyphens e.g. 03-1234-5678 or 090-1234-5678
+    const rawDigits = data.expectedNumber.replace(/\D/g, '');
+    if (rawDigits.startsWith('090') || rawDigits.startsWith('080') || rawDigits.startsWith('070')) {
+      if (rawDigits.length === 11) {
+        printedNo = `${rawDigits.slice(0, 3)}-${rawDigits.slice(3, 7)}-${rawDigits.slice(7)}`;
+      }
+    } else if (rawDigits.startsWith('03') || rawDigits.startsWith('06')) {
+      if (rawDigits.length === 10) {
+        printedNo = `${rawDigits.slice(0, 2)}-${rawDigits.slice(2, 6)}-${rawDigits.slice(6)}`;
+      }
+    } else if (rawDigits.length >= 10) {
+      printedNo = `${rawDigits.slice(0, 3)}-${rawDigits.slice(3, 6)}-${rawDigits.slice(6)}`;
+    }
+  }
+
   ctx.fillText(labelText, 0, -13);
 
-  // Registration Number text
-  ctx.fillStyle = '#1e1b4b'; // deep indigo black
-
-  // Vary representation (grouped hyphens like T-1234-5678-90123 or spaces or plain)
-  let printedNo = data.expectedNumber;
-  const variant = parseInt(data.id.replace('inv_', '')) % 3;
-  if (variant === 1) {
-    // Spacer: T 1234 5678 90123
-    printedNo = `T ${data.expectedNumber.slice(1, 5)} ${data.expectedNumber.slice(5, 9)} ${data.expectedNumber.slice(9)}`;
-  } else if (variant === 2) {
-    // Hyphens: T-1234-5678-90123
-    printedNo = `T-${data.expectedNumber.slice(1, 5)}-${data.expectedNumber.slice(5, 9)}-${data.expectedNumber.slice(9)}`;
-  }
-
-  // Font properties for registration code
-  let targetFontSize = '17px';
-  if (data.difficulty === 'easy') {
-    targetFontSize = '19px';
-  } else if (data.difficulty === 'hard') {
-    targetFontSize = '16px'; // smaller is harder to read
-  }
-
+  // Target Number Text
+  ctx.fillStyle = '#1e1b4b';
+  let targetFontSize = category === 'tax_number' ? '18px' : '20px';
   let codeFont = `bold ${targetFontSize} ${fontName}`;
   if (data.style === 'thermal_distorted') {
     codeFont = `${targetFontSize} "Courier New", monospace`;
@@ -276,26 +335,6 @@ export function renderReceiptToDataUrl(data: GeneratedInvoiceData): string {
   ctx.fillText(printedNo, 0, 10);
 
   ctx.restore();
-
-  // 6. Draw physical paper crinkles & scanner lines for hard difficulty to test visual agility
-  if (data.difficulty === 'hard' || data.style === 'thermal_distorted') {
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(0, Math.random() * canvas.height);
-    ctx.bezierCurveTo(
-      canvas.width / 3, Math.random() * canvas.height,
-      (canvas.width / 3) * 2, Math.random() * canvas.height,
-      canvas.width, Math.random() * canvas.height
-    );
-    ctx.stroke();
-
-    // Speckles of light dust
-    ctx.fillStyle = 'rgba(0,0,0,0.1)';
-    for (let i = 0; i < 40; i++) {
-      ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 1, 1);
-    }
-  }
 
   // Remove filters
   ctx.filter = 'none';

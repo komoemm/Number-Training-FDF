@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, limit, getDocs, doc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, isFirebaseActive } from '../firebase';
 import { Clock, RefreshCw, Layers, Database, ChevronDown, ChevronUp, CheckCircle, XCircle, Trash2, Filter, Key, ShieldAlert, Trophy, Award, TrendingUp, Download } from 'lucide-react';
-import { TestSession, TypingDetail } from '../types';
+import { TestSession, TypingDetail, TrainingCategory } from '../types';
 import { generateCertificatePDF } from '../utils/pdfGenerator';
 import { generateCertificateHTML } from '../utils/htmlGenerator';
 import { SpeedDashboard } from './StatsPanel';
@@ -26,6 +26,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
   const [expandedSessionId, setExpandedSessionId] = useState<number | null>(null);
   const [errorStatus, setErrorStatus] = useState<string | null>(null);
   const [filterUser, setFilterUser] = useState<string>('all');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterLoginUser, setFilterLoginUser] = useState<string>('all');
 
   // Multi-stage inline deletion confirmation state variables (Iframe-safe)
@@ -77,6 +78,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
             accuracy: data.accuracy ?? (data.totalImagesAttempted > 0 ? Math.round(((data.correctEntries || 0) / data.totalImagesAttempted) * 100) : 100),
             level: data.level,
             trainingMode: data.trainingMode || (data.totalImagesAttempted > 90 ? 'hard_180' : data.totalImagesAttempted > 20 ? 'normal_90' : 'easy_20'),
+            category: data.category || 'tax_number',
             details: data.details || []
           });
         });
@@ -103,6 +105,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
             timestamp: new Date(session.timestamp),
             userId: session.userId || session.operatorId || 'guest',
             operatorId: session.operatorId || session.userId || 'guest',
+            category: session.category || 'tax_number',
             trainingMode: session.trainingMode || (session.totalImagesAttempted > 90 ? 'hard_180' : session.totalImagesAttempted > 20 ? 'normal_90' : 'easy_20')
           }));
         }
@@ -268,9 +271,10 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
   const distinctUsers = Array.from(new Set(sessions.map(s => s.userId))).filter(Boolean);
   const distinctLoginUsers = Array.from(new Set(loginLogs.map(l => l.username))).filter(Boolean);
 
-  const displayedSessions = isAdmin
+  const displayedSessions = (isAdmin
     ? (filterUser === 'all' ? sessions : sessions.filter(s => s.userId === filterUser))
-    : sessions.filter(s => s.userId === userId);
+    : sessions.filter(s => s.userId === userId)
+  ).filter(s => filterCategory === 'all' ? true : (s.category || 'tax_number') === filterCategory);
 
   const displayedLogins = filterLoginUser === 'all'
     ? loginLogs
@@ -387,7 +391,27 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
         </div>
 
         {/* Global Toolbar */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {activeTab === 'typing' && (
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-600 shadow-sm">
+              <Filter className="w-3.5 h-3.5 text-slate-400" />
+              <select
+                value={filterCategory}
+                aria-label="Filter typing test logs by category"
+                onChange={(e) => {
+                  setFilterCategory(e.target.value);
+                  setExpandedSessionId(null);
+                }}
+                className="bg-transparent border-none outline-none font-bold text-slate-700 cursor-pointer text-xs"
+              >
+                <option value="all">All Categories</option>
+                <option value="tax_number">🧾 Tax Number (QIN)</option>
+                <option value="date_number">📅 Date Number</option>
+                <option value="phone_number">📞 Phone Number</option>
+              </select>
+            </div>
+          )}
+
           {activeTab === 'typing' && isAdmin && distinctUsers.length > 0 && (
             <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-600 shadow-sm">
               <Filter className="w-3.5 h-3.5 text-slate-400" />
@@ -500,6 +524,9 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                                   Operator: {session.userId}
                                 </span>
                               )}
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                {session.category === 'date_number' ? '📅 Date No' : session.category === 'phone_number' ? '📞 Phone No' : '🧾 Tax No'}
+                              </span>
                               {isHardMode ? (
                                 <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-[10px] font-bold border border-purple-300 uppercase tracking-wider">
                                   <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>

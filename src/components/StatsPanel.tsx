@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { Award, Zap, Percent, Clock, Trophy, TrendingUp, Filter, Globe, Sparkles, CheckCircle2 } from 'lucide-react';
-import { TestSession, LeaderboardEntry, TrainingMode } from '../types';
+import { TestSession, LeaderboardEntry, TrainingMode, TrainingCategory } from '../types';
 
 interface StatsPanelProps {
   currentIndex: number;
@@ -15,6 +15,7 @@ interface StatsPanelProps {
   averageTimeMs: number;
   isTestActive: boolean;
   trainingMode?: TrainingMode;
+  category?: TrainingCategory;
 }
 
 export default function StatsPanel({
@@ -24,7 +25,8 @@ export default function StatsPanel({
   elapsedMs,
   averageTimeMs,
   isTestActive,
-  trainingMode = 'easy_20'
+  trainingMode = 'easy_20',
+  category = 'tax_number'
 }: StatsPanelProps) {
   
   // Calculate running accuracy
@@ -35,14 +37,22 @@ export default function StatsPanel({
   const currentElapsedSec = (elapsedMs / 1000).toFixed(2);
   const averageTimeSec = averageTimeMs > 0 ? (averageTimeMs / 1000).toFixed(2) : '0.00';
 
-  // Calculate Characters Per Minute (CPM) based on typical 14 characters typed per average speed
-  const characterCount = 14; 
+  // Category specific character count and SLA
+  const characterCount = category === 'tax_number' ? 14 : category === 'date_number' ? 8 : 11;
   const cpm = averageTimeMs > 0 ? Math.round((characterCount / (averageTimeMs / 1000)) * 60) : 0;
   const wpm = Math.round(cpm / 5);
 
+  const categoryLabel = category === 'date_number' 
+    ? '📅 Date Number' 
+    : category === 'phone_number' 
+    ? '📞 Phone Number' 
+    : '🧾 Tax Number';
+
+  const slaTargetSec = category === 'date_number' ? '4.00s' : category === 'phone_number' ? '5.00s' : '6.00s';
+
   // Meter ratios
   const progressRatio = isTestActive ? Math.round(((currentIndex) / totalCount) * 100) : 100;
-  const clockRatio = isTestActive ? Math.min((elapsedMs / 6000) * 100, 100) : 0;
+  const clockRatio = isTestActive ? Math.min((elapsedMs / (category === 'date_number' ? 4000 : category === 'phone_number' ? 5000 : 6000)) * 100, 100) : 0;
   // Speed ratio: map 0-10s average to 100% to 0%
   const speedRatio = averageTimeMs > 0 ? Math.max(0, Math.min(100, Math.round(((10000 - averageTimeMs) / 10000) * 100))) : 0;
 
@@ -50,27 +60,30 @@ export default function StatsPanel({
     <div className="space-y-3">
       {/* Mode Tag Ribbon when active */}
       {isTestActive && (
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between px-1 flex-wrap gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-indigo-50 text-indigo-800 border border-indigo-200 shadow-xs font-sans tracking-wide">
+              {categoryLabel}
+            </span>
             {trainingMode === 'hard_180' ? (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-purple-50 text-purple-800 border border-purple-200 shadow-xs font-sans tracking-wide">
                 <span className="w-2 h-2 rounded-full bg-purple-600 animate-pulse"></span>
-                ⚡ Hard Mode (180 Invoices Extreme Endurance)
+                ⚡ Hard Mode (180 Invoices)
               </span>
             ) : trainingMode === 'normal_90' ? (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-blue-50 text-blue-700 border border-blue-200 shadow-xs font-sans tracking-wide">
                 <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-                🔵 Normal Mode (90 Invoices Official Assessment)
+                🔵 Normal Mode (90 Invoices)
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-xs font-sans tracking-wide">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                🟢 Easy Mode (20 Invoices Benchmark)
+                🟢 Easy Mode (20 Invoices)
               </span>
             )}
           </div>
           <span className="text-[11px] font-mono text-slate-400 font-bold">
-            Target SLA &lt; 6.00s / Doc
+            Target SLA &lt; {slaTargetSec} / Doc
           </span>
         </div>
       )}

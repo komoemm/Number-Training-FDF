@@ -46,6 +46,10 @@
           "type": "string",
           "description": "Selected training tier mode (easy_20, normal_90, hard_180)."
         },
+        "category": {
+          "type": "string",
+          "description": "Selected data transcription category (tax_number, date_number, phone_number)."
+        },
         "details": {
           "type": "array",
           "description": "Detailed breakdowns for each individual image typed during the session."
@@ -126,6 +130,10 @@
         "customImageUrl": {
           "type": "string",
           "description": "Base64 data URI of the uploaded invoice document image."
+        },
+        "category": {
+          "type": "string",
+          "description": "Selected training transcription category (tax_number, date_number, phone_number)."
         }
       },
       "required": [

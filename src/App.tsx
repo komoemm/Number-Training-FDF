@@ -345,6 +345,7 @@ export default function App() {
   // Core Speed Test States
   const [isTestActive, setIsTestActive] = useState<boolean>(false);
   const [trainingMode, setTrainingMode] = useState<TrainingMode>('easy_20');
+  const [activeSessionSource, setActiveSessionSource] = useState<'standard' | 'custom'>('standard');
   const [isConfirmingCancel, setIsConfirmingCancel] = useState<boolean>(false);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [expectedDataset, setExpectedDataset] = useState<GeneratedInvoiceData[]>([]);
@@ -580,6 +581,7 @@ export default function App() {
    * so that switching images has absolutely zero visual download/loading delay.
    */
   const startTestingSession = (mode: TrainingMode = 'normal_90') => {
+    setActiveSessionSource('standard');
     setTrainingMode(mode);
     setCheatTriggerMsg(null);
     setSaveError(null);
@@ -618,6 +620,7 @@ export default function App() {
    */
   const startCustomTestingSession = (mode: TrainingMode = 'normal_90') => {
     if (customInvoices.length === 0) return;
+    setActiveSessionSource('custom');
     setTrainingMode(mode);
     setCheatTriggerMsg(null);
     setSaveError(null);
@@ -666,6 +669,17 @@ export default function App() {
     if (queue.length > 1) {
       const preloadImg = new Image();
       preloadImg.src = urls[queue[1].id];
+    }
+  };
+
+  /**
+   * Repeats the speed testing session while preserving the original session source.
+   */
+  const handleRunAgain = () => {
+    if (activeSessionSource === 'custom' && customInvoices.length > 0) {
+      startCustomTestingSession(trainingMode);
+    } else {
+      startTestingSession(trainingMode);
     }
   };
 
@@ -2445,8 +2459,9 @@ export default function App() {
                     <span>Download HTML Result</span>
                   </button>
                   <button
-                    onClick={() => startTestingSession(trainingMode)}
+                    onClick={handleRunAgain}
                     className="px-5 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-sm cursor-pointer text-sm uppercase tracking-wider"
+                    id="btn-run-again"
                   >
                     <RotateCcw className="w-4 h-4" />
                     <span>Run Again</span>

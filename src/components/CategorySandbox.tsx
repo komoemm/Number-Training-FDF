@@ -6,6 +6,7 @@
 import React, { useRef, useState } from 'react';
 import {
   FileImage,
+  FileText,
   Upload,
   Plus,
   Trash2,
@@ -37,6 +38,7 @@ interface CategorySandboxProps {
   setCustomExpectedCode: (val: string) => void;
   customCompanyName: string;
   setCustomCompanyName: (val: string) => void;
+  isAdmin?: boolean;
 }
 
 export const CategorySandbox: React.FC<CategorySandboxProps> = ({
@@ -55,7 +57,8 @@ export const CategorySandbox: React.FC<CategorySandboxProps> = ({
   customExpectedCode,
   setCustomExpectedCode,
   customCompanyName,
-  setCustomCompanyName
+  setCustomCompanyName,
+  isAdmin = false
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
@@ -171,193 +174,289 @@ export const CategorySandbox: React.FC<CategorySandboxProps> = ({
         </div>
       </div>
 
-      {/* 2. Upload Sandbox Pool Section */}
-      <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-3 gap-2">
-          <div>
-            <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 flex items-center gap-1.5">
-              <Upload className="w-4 h-4 text-indigo-600 font-bold" /> Upload Custom Images for Training Pool
+      {/* 2. Admin Upload Pool Section OR Trainee Verified Status Banner */}
+      {isAdmin ? (
+        <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-3 gap-2">
+            <div>
+              <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 flex items-center gap-1.5">
+                <Upload className="w-4 h-4 text-indigo-600 font-bold" /> Upload Custom Images for Training Pool
+              </span>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                {config.extractHint}
+              </p>
+            </div>
+            <span className="text-[9px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
+              Admin Upload Console
             </span>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              {config.extractHint}
-            </p>
           </div>
-        </div>
 
-        {uploadProgressError && (
-          <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{uploadProgressError}</span>
+          {uploadProgressError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{uploadProgressError}</span>
+            </div>
+          )}
+
+          {/* Upload Dropzone */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+            onDragLeave={() => setIsDragOver(false)}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-150 ${
+              isDragOver
+                ? 'border-indigo-500 bg-indigo-50/50 scale-[0.99]'
+                : 'border-slate-300 hover:border-indigo-400 bg-white hover:bg-slate-50/50'
+            }`}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/png, image/jpeg, image/webp"
+              onChange={(e) => e.target.files && handleFiles(e.target.files)}
+              className="hidden"
+            />
+            <div className="flex flex-col items-center justify-center space-y-2">
+              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-full">
+                <Upload className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-700">
+                  {isUploading ? 'Processing uploaded files...' : 'Click to browse or drop invoice images here'}
+                </p>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Supports multiple JPG, PNG, WEBP files (Max 3MB each).
+                </p>
+              </div>
+            </div>
           </div>
-        )}
 
-        {/* Upload Dropzone */}
-        <div
-          onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-          onDragLeave={() => setIsDragOver(false)}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-150 ${
-            isDragOver
-              ? 'border-indigo-500 bg-indigo-50/50 scale-[0.99]'
-              : 'border-slate-300 hover:border-indigo-400 bg-white hover:bg-slate-50/50'
-          }`}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept="image/png, image/jpeg, image/webp"
-            onChange={(e) => e.target.files && handleFiles(e.target.files)}
-            className="hidden"
-          />
-          <div className="flex flex-col items-center justify-center space-y-2">
-            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-full">
-              <Upload className="w-5 h-5" />
+          {/* Optional Defaults Override */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                Fallback Expected Code (If filename doesn't contain code)
+              </label>
+              <input
+                type="text"
+                placeholder={config.codePlaceholder}
+                value={customExpectedCode}
+                onChange={(e) => setCustomExpectedCode(e.target.value)}
+                className="w-full p-2.5 bg-white border border-slate-200 text-xs text-slate-800 rounded-xl outline-none focus:border-indigo-500 font-mono font-bold"
+              />
             </div>
             <div>
-              <p className="text-xs font-bold text-slate-700">
-                {isUploading ? 'Processing uploaded files...' : 'Click to browse or drop invoice images here'}
-              </p>
-              <p className="text-[11px] text-slate-400 mt-1">
-                Supports multiple JPG, PNG, WEBP files (Max 3MB each).
-              </p>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                Fallback Issuer / Store Name
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Aeon Retail Co., Ltd."
+                value={customCompanyName}
+                onChange={(e) => setCustomCompanyName(e.target.value)}
+                className="w-full p-2.5 bg-white border border-slate-200 text-xs text-slate-800 rounded-xl outline-none focus:border-indigo-500"
+              />
             </div>
           </div>
-        </div>
 
-        {/* Optional Defaults Override */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-              Fallback Expected Code (If filename doesn't contain code)
-            </label>
-            <input
-              type="text"
-              placeholder={config.codePlaceholder}
-              value={customExpectedCode}
-              onChange={(e) => setCustomExpectedCode(e.target.value)}
-              className="w-full p-2.5 bg-white border border-slate-200 text-xs text-slate-800 rounded-xl outline-none focus:border-indigo-500 font-mono font-bold"
-            />
-          </div>
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-              Fallback Issuer / Store Name
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Aeon Retail Co., Ltd."
-              value={customCompanyName}
-              onChange={(e) => setCustomCompanyName(e.target.value)}
-              className="w-full p-2.5 bg-white border border-slate-200 text-xs text-slate-800 rounded-xl outline-none focus:border-indigo-500"
-            />
-          </div>
-        </div>
-
-        {/* Catalog List of Loaded Images */}
-        <div className="space-y-2 pt-3 border-t border-slate-200">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 flex items-center gap-1">
-              <FileImage className="w-3.5 h-3.5 text-indigo-600" /> Active Pool Images ({invoices.length})
-            </span>
-            
-            <div className="flex gap-2">
-              <button
-                onClick={() => onAddSample(category)}
-                className="text-[9px] bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 px-2.5 py-1 rounded-md font-bold cursor-pointer transition uppercase tracking-wider flex items-center gap-1"
-              >
-                <Plus className="w-3 h-3" /> Populate Sample Image
-              </button>
-              {invoices.length > 0 && (
+          {/* Catalog List of Loaded Images (Admin Editable) */}
+          <div className="space-y-2 pt-3 border-t border-slate-200">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 flex items-center gap-1">
+                <FileImage className="w-3.5 h-3.5 text-indigo-600" /> Active Pool Images ({invoices.length})
+              </span>
+              
+              <div className="flex gap-2">
                 <button
-                  onClick={() => onClearPool(category)}
-                  className="text-[9px] hover:bg-rose-50 border border-transparent text-rose-600 px-2.5 py-1 rounded-md font-bold cursor-pointer transition uppercase tracking-wider"
+                  onClick={() => onAddSample(category)}
+                  className="text-[9px] bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 px-2.5 py-1 rounded-md font-bold cursor-pointer transition uppercase tracking-wider flex items-center gap-1"
                 >
-                  Clear Pool
+                  <Plus className="w-3 h-3" /> Populate Sample Image
                 </button>
-              )}
+                {invoices.length > 0 && (
+                  <button
+                    onClick={() => onClearPool(category)}
+                    className="text-[9px] hover:bg-rose-50 border border-transparent text-rose-600 px-2.5 py-1 rounded-md font-bold cursor-pointer transition uppercase tracking-wider"
+                  >
+                    Clear Pool
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
 
-          {invoices.length === 0 ? (
-            <div className="border border-slate-200 rounded-xl p-6 text-center bg-white">
-              <p className="text-slate-400 text-xs font-semibold">No images in this category pool yet</p>
-              <p className="text-[10px] text-slate-400 mt-1.5 max-w-sm mx-auto leading-relaxed">
-                Drop your receipt image files above or click <strong className="text-indigo-600 cursor-pointer hover:underline" onClick={() => onAddSample(category)}>Populate Sample Image</strong> to immediately test with generated receipts!
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[220px] overflow-y-auto pr-1">
-              {invoices.map((inv) => {
-                const globalIndex = allInvoices.findIndex(item => item.id === inv.id);
-                return (
-                  <div key={inv.id} className="flex bg-white border border-slate-200 rounded-lg p-2 items-center justify-between group hover:border-indigo-300 transition relative">
-                    <div className="flex items-center gap-2.5 overflow-hidden flex-1 mr-1">
-                      {/* Thumbnail with Zoom */}
-                      <div 
-                        onClick={() => globalIndex !== -1 && onOpenLabelingModal(globalIndex)}
-                        className="w-12 h-10 border border-slate-200 rounded bg-slate-50 overflow-hidden shrink-0 flex items-center justify-center cursor-pointer relative group-hover:border-indigo-300 shadow-sm"
-                        title="Click to zoom & review details"
-                      >
-                        <img
-                          src={inv.customImageUrl}
-                          alt="Invoice thumbnail"
-                          className="object-cover w-full h-full group-hover:scale-105 transition duration-150"
-                        />
-                        <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-150 flex items-center justify-center">
-                          <Plus className="w-3.5 h-3.5 text-white" />
+            {invoices.length === 0 ? (
+              <div className="border border-slate-200 rounded-xl p-6 text-center bg-white">
+                <p className="text-slate-400 text-xs font-semibold">No images in this category pool yet</p>
+                <p className="text-[10px] text-slate-400 mt-1.5 max-w-sm mx-auto leading-relaxed">
+                  Drop your receipt image files above or click <strong className="text-indigo-600 cursor-pointer hover:underline" onClick={() => onAddSample(category)}>Populate Sample Image</strong> to immediately test with generated receipts!
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[220px] overflow-y-auto pr-1">
+                {invoices.map((inv) => {
+                  const globalIndex = allInvoices.findIndex(item => item.id === inv.id);
+                  return (
+                    <div key={inv.id} className="flex bg-white border border-slate-200 rounded-lg p-2 items-center justify-between group hover:border-indigo-300 transition relative">
+                      <div className="flex items-center gap-2.5 overflow-hidden flex-1 mr-1">
+                        {/* Thumbnail with Zoom */}
+                        <div 
+                          onClick={() => globalIndex !== -1 && onOpenLabelingModal(globalIndex)}
+                          className="w-12 h-10 border border-slate-200 rounded bg-slate-50 overflow-hidden shrink-0 flex items-center justify-center cursor-pointer relative group-hover:border-indigo-300 shadow-sm"
+                          title="Click to zoom & review details"
+                        >
+                          <img
+                            src={inv.customImageUrl}
+                            alt="Invoice thumbnail"
+                            className="object-cover w-full h-full group-hover:scale-105 transition duration-150"
+                          />
+                          <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-150 flex items-center justify-center">
+                            <Plus className="w-3.5 h-3.5 text-white" />
+                          </div>
+                        </div>
+                        
+                        {/* Inline Editable Fields */}
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <input
+                            type="text"
+                            value={inv.companyName}
+                            placeholder="Issuer Name"
+                            onChange={(e) => onUpdateCompany(inv.id, e.target.value)}
+                            className="w-full text-[10px] font-bold text-slate-700 bg-transparent hover:bg-slate-50 focus:bg-white border-b border-transparent hover:border-slate-300 focus:border-indigo-500 rounded px-1 py-0.5 outline-none transition"
+                            title="Click to edit issuer name"
+                          />
+                          <div className="flex items-center gap-1 pl-1">
+                            <span className="text-[9px] text-indigo-600 font-mono font-bold shrink-0">Target:</span>
+                            <input
+                              type="text"
+                              value={inv.expectedNumber}
+                              onChange={(e) => onUpdateCode(inv.id, e.target.value)}
+                              className="w-full text-[10px] font-mono text-indigo-700 bg-transparent hover:bg-slate-50 focus:bg-white border-b border-transparent hover:border-slate-300 focus:border-indigo-500 rounded px-1 py-0.5 outline-none font-bold transition tracking-wider uppercase"
+                              title="Click to edit expected transcribed number"
+                            />
+                          </div>
                         </div>
                       </div>
                       
-                      {/* Inline Editable Fields */}
-                      <div className="flex-1 min-w-0 space-y-1">
-                        <input
-                          type="text"
-                          value={inv.companyName}
-                          placeholder="Issuer Name"
-                          onChange={(e) => onUpdateCompany(inv.id, e.target.value)}
-                          className="w-full text-[10px] font-bold text-slate-700 bg-transparent hover:bg-slate-50 focus:bg-white border-b border-transparent hover:border-slate-300 focus:border-indigo-500 rounded px-1 py-0.5 outline-none transition"
-                          title="Click to edit issuer name"
-                        />
-                        <div className="flex items-center gap-1 pl-1">
-                          <span className="text-[9px] text-indigo-600 font-mono font-bold shrink-0">Target:</span>
-                          <input
-                            type="text"
-                            value={inv.expectedNumber}
-                            onChange={(e) => onUpdateCode(inv.id, e.target.value)}
-                            className="w-full text-[10px] font-mono text-indigo-700 bg-transparent hover:bg-slate-50 focus:bg-white border-b border-transparent hover:border-slate-300 focus:border-indigo-500 rounded px-1 py-0.5 outline-none font-bold transition tracking-wider uppercase"
-                            title="Click to edit expected transcribed number"
-                          />
-                        </div>
+                      {/* Action Buttons */}
+                      <div className="flex flex-col items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => globalIndex !== -1 && onOpenLabelingModal(globalIndex)}
+                          aria-label={`Open labeling assistant for invoice ${inv.companyName || inv.id}`}
+                          className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded cursor-pointer transition"
+                          title="Open Labeling Assistant"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => onDeleteInvoice(inv.id)}
+                          aria-label={`Remove invoice ${inv.companyName || inv.id} from pool`}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded cursor-pointer transition shrink-0"
+                          title="Remove image from sandbox"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
-                    
-                    {/* Action Buttons */}
-                    <div className="flex flex-col items-center gap-1 shrink-0">
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* Trainee View: Status Banner and Read-Only Catalog */
+        <div className="space-y-4">
+          {/* Trainee Verified Status Banner */}
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-2xl border border-indigo-500/30 shadow-md">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30 shrink-0">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-indigo-200">
+                  🎯 OFFICIAL TRAINING QUEUE PREPARED ({invoices.length} Invoices Available for {config.title})
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                  Administrator has prepared and verified these invoices. Select an SLA tier below to begin.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Read-Only Invoice Catalog Pool for Trainee */}
+          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
+              <span className="text-[10px] uppercase font-bold tracking-widest text-slate-600 flex items-center gap-1.5">
+                <FileImage className="w-3.5 h-3.5 text-indigo-600" /> Verified Pool Images ({invoices.length})
+              </span>
+              <span className="text-[9px] bg-emerald-50 border border-emerald-200 text-emerald-700 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
+                Read-Only Training Queue
+              </span>
+            </div>
+
+            {invoices.length === 0 ? (
+              <div className="border border-slate-200 rounded-xl p-6 text-center bg-white">
+                <p className="text-slate-400 text-xs font-semibold">No images prepared in this category yet</p>
+                <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+                  Please contact the administrator to upload verified receipt invoices for this training category.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[180px] overflow-y-auto pr-1">
+                {invoices.map((inv) => {
+                  const globalIndex = allInvoices.findIndex(item => item.id === inv.id);
+                  return (
+                    <div key={inv.id} className="flex bg-white border border-slate-200 rounded-lg p-2 items-center justify-between group hover:border-indigo-300 transition shadow-2xs">
+                      <div className="flex items-center gap-2.5 overflow-hidden flex-1 mr-1">
+                        {/* Thumbnail with Zoom preview */}
+                        <div 
+                          onClick={() => globalIndex !== -1 && onOpenLabelingModal(globalIndex)}
+                          className="w-12 h-10 border border-slate-200 rounded bg-slate-50 overflow-hidden shrink-0 flex items-center justify-center cursor-pointer relative group-hover:border-indigo-300 shadow-sm"
+                          title="Click to preview receipt image"
+                        >
+                          <img
+                            src={inv.customImageUrl}
+                            alt="Invoice thumbnail"
+                            className="object-cover w-full h-full group-hover:scale-105 transition duration-150"
+                          />
+                          <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition duration-150 flex items-center justify-center">
+                            <Plus className="w-3.5 h-3.5 text-white" />
+                          </div>
+                        </div>
+                        
+                        {/* Read-Only Detail Display */}
+                        <div className="flex-1 min-w-0 space-y-0.5">
+                          <p className="text-[10px] font-bold text-slate-800 truncate" title={inv.companyName || 'Unknown Issuer'}>
+                            {inv.companyName || 'Standard Receipt'}
+                          </p>
+                          <div className="flex items-center gap-1 text-[9px] font-mono">
+                            <span className="text-slate-400 font-bold">Target:</span>
+                            <span className="font-bold text-indigo-700 uppercase tracking-wider bg-indigo-50/70 px-1 py-0.2 rounded border border-indigo-100 truncate">
+                              {inv.expectedNumber}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Preview inspection button */}
                       <button
                         onClick={() => globalIndex !== -1 && onOpenLabelingModal(globalIndex)}
-                        aria-label={`Open labeling assistant for invoice ${inv.companyName || inv.id}`}
-                        className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded cursor-pointer transition"
-                        title="Open Labeling Assistant"
+                        className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded cursor-pointer transition shrink-0"
+                        title="Preview Full Image"
+                        aria-label="Preview full invoice image"
                       >
-                        <Edit className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => onDeleteInvoice(inv.id)}
-                        aria-label={`Remove invoice ${inv.companyName || inv.id} from pool`}
-                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded cursor-pointer transition shrink-0"
-                        title="Remove image from sandbox"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <FileText className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 3. Interactive Mode Selector Grid (Launchpad) */}
       <div className="border-t border-slate-150 pt-5 space-y-4">

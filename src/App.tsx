@@ -916,7 +916,8 @@ export default function App() {
       targetLength = (hasT && inputHasT) ? 14 : 13;
     } else if (category === 'date_number') {
       cleaned = rawVal.replace(/\D/g, '');
-      targetLength = 8;
+      const expectedDigits = expectedRaw.replace(/\D/g, '');
+      targetLength = expectedDigits.length || 8;
     } else if (category === 'phone_number') {
       cleaned = rawVal.replace(/\D/g, '');
       const expectedDigitsOnly = expectedRaw.replace(/\D/g, '');
@@ -927,15 +928,24 @@ export default function App() {
 
     // Real-time character match feedback
     if (cleaned.length > 0) {
-      const sanitizedExpected = expectedRaw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      const expectedSlice = sanitizedExpected.substring(0, cleaned.length);
-      setLastCharacterValid(cleaned === expectedSlice);
+      if (category === 'tax_number') {
+        const sanitizedExpected = expectedRaw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        if (sanitizedExpected.startsWith('T') && !cleaned.startsWith('T')) {
+          const withoutT = sanitizedExpected.substring(1);
+          setLastCharacterValid(withoutT.startsWith(cleaned));
+        } else {
+          setLastCharacterValid(sanitizedExpected.startsWith(cleaned));
+        }
+      } else {
+        const sanitizedExpectedDigits = expectedRaw.replace(/\D/g, '');
+        setLastCharacterValid(sanitizedExpectedDigits.startsWith(cleaned));
+      }
     } else {
       setLastCharacterValid(null);
     }
 
     // Auto-advance trigger
-    if (cleaned.length >= targetLength) {
+    if (cleaned.length >= targetLength && targetLength > 0) {
       verifyAndAdvanceSession(cleaned, category);
     }
   };
@@ -961,6 +971,10 @@ export default function App() {
     if (category === 'tax_number') {
       isCorrect = (sanitizedExpected === sanitizedTyped) || 
         (sanitizedExpected.endsWith(sanitizedTyped) && sanitizedTyped.length === 13);
+    } else if (category === 'date_number' || category === 'phone_number') {
+      const expDigits = currentInvoice.expectedNumber.replace(/\D/g, '');
+      const typDigits = typedText.replace(/\D/g, '');
+      isCorrect = (expDigits === typDigits);
     } else {
       isCorrect = (sanitizedExpected === sanitizedTyped);
     }
@@ -1378,6 +1392,7 @@ export default function App() {
                     setCustomExpectedCode={setCustomExpectedCode}
                     customCompanyName={customCompanyName}
                     setCustomCompanyName={setCustomCompanyName}
+                    isAdmin={currentOfflineUser?.role === 'admin'}
                   />
                 ) : (
                   /* Tab 4: Trainee Accounts Management Tab (Admin Only) */

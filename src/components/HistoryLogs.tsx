@@ -10,6 +10,7 @@ import { Clock, RefreshCw, Layers, Database, ChevronDown, ChevronUp, CheckCircle
 import { TestSession, TypingDetail, TrainingCategory } from '../types';
 import { generateCertificatePDF } from '../utils/pdfGenerator';
 import { generateCertificateHTML } from '../utils/htmlGenerator';
+import { evaluateCategoryLevel, getCategoryRankDetails } from '../utils/speedRanking';
 import { SpeedDashboard } from './StatsPanel';
 
 interface HistoryLogsProps {
@@ -280,12 +281,8 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
     ? loginLogs
     : loginLogs.filter(l => l.username === filterLoginUser);
 
-  const getLevelBySpeed = (timeMs: number) => {
-    const avgSec = timeMs / 1000;
-    if (avgSec <= 3.0) return 'A';
-    if (avgSec <= 4.0) return 'B';
-    if (avgSec <= 5.0) return 'C';
-    return 'D';
+  const getLevelBySpeed = (timeMs: number, category: TrainingCategory = 'tax_number') => {
+    return evaluateCategoryLevel(timeMs, category);
   };
 
   // Compute leaderboard and statistics
@@ -305,7 +302,8 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
         ? Math.round((session.correctEntries / session.totalImagesAttempted) * 100) 
         : 100;
         
-      const lvl = getLevelBySpeed(session.averageTimeMs);
+      const sessionCat = (session.category as TrainingCategory) || 'tax_number';
+      const lvl = session.level || evaluateCategoryLevel(session.averageTimeMs, sessionCat);
       const totalRuns = sessions.filter(s => s.userId === u).length;
 
       return {
@@ -505,7 +503,8 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                     const accuracy = Math.round((session.correctEntries / session.totalImagesAttempted) * 100);
                     const isExpanded = expandedSessionId === sIdx;
                     const dateLabel = formatDate(session.timestamp);
-                    const lvl = getLevelBySpeed(session.averageTimeMs);
+                    const sessionCat = (session.category as TrainingCategory) || 'tax_number';
+                    const lvl = session.level || evaluateCategoryLevel(session.averageTimeMs, sessionCat);
                     const isHardMode = session.trainingMode === 'hard_180' || session.totalImagesAttempted > 90;
                     const isNormalMode = session.trainingMode === 'normal_90' || (session.totalImagesAttempted > 20 && !isHardMode);
                     
@@ -624,13 +623,8 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  const avgSec = session.averageTimeMs / 1000;
-                                  let rankStr = 'Level D (Needs Practice: > 5.0s)';
-                                  if (avgSec <= 3.0) rankStr = 'Level A (Elite Expert: 2.5s ~ 3.0s)';
-                                  else if (avgSec <= 4.0) rankStr = 'Level B (Proficient Specialist: 3.1s ~ 4.0s)';
-                                  else if (avgSec <= 5.0) rankStr = 'Level C (Qualified Operator: 4.1s ~ 5.0s)';
-                                  
-                                  generateCertificatePDF(session, lvl, rankStr);
+                                  const rankDetails = getCategoryRankDetails(session.averageTimeMs, sessionCat);
+                                  generateCertificatePDF(session, rankDetails.level, rankDetails.name);
                                 }}
                                 aria-label={`Download PDF Performance Certificate for session taken by ${session.userId}`}
                                 className="p-1 px-2 rounded text-emerald-700 bg-emerald-50 hover:text-emerald-800 hover:bg-emerald-100 border border-emerald-150 transition cursor-pointer flex items-center gap-1 text-[10px] font-sans font-bold uppercase shrink-0"
@@ -642,13 +636,8 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  const avgSec = session.averageTimeMs / 1000;
-                                  let rankStr = 'Level D (Needs Practice: > 5.0s)';
-                                  if (avgSec <= 3.0) rankStr = 'Level A (Elite Expert: 2.5s ~ 3.0s)';
-                                  else if (avgSec <= 4.0) rankStr = 'Level B (Proficient Specialist: 3.1s ~ 4.0s)';
-                                  else if (avgSec <= 5.0) rankStr = 'Level C (Qualified Operator: 4.1s ~ 5.0s)';
-                                  
-                                  generateCertificateHTML(session, lvl, rankStr);
+                                  const rankDetails = getCategoryRankDetails(session.averageTimeMs, sessionCat);
+                                  generateCertificateHTML(session, rankDetails.level, rankDetails.name);
                                 }}
                                 aria-label={`Download HTML Evidence Certificate for session taken by ${session.userId}`}
                                 className="p-1 px-2 rounded text-blue-700 bg-blue-50 hover:text-blue-800 hover:bg-blue-100 border border-blue-150 transition cursor-pointer flex items-center gap-1 text-[10px] font-sans font-bold uppercase shrink-0"

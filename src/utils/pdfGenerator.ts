@@ -1,4 +1,5 @@
-import { TestSession, TypingDetail } from '../types';
+import { TestSession, TypingDetail, TrainingCategory } from '../types';
+import { CATEGORY_SLA_CONFIG } from './speedRanking';
 
 /**
  * Generates and downloads a highly-professional, styled PDF Performance Certificate & Report 
@@ -11,6 +12,9 @@ import { TestSession, TypingDetail } from '../types';
  */
 export async function generateCertificatePDF(session: TestSession, level: string, rankName: string): Promise<void> {
   const { jsPDF } = await import('jspdf');
+
+  const categoryKey: TrainingCategory = session.category || 'tax_number';
+  const categoryConfig = CATEGORY_SLA_CONFIG[categoryKey] || CATEGORY_SLA_CONFIG.tax_number;
 
   // Initialize standard A4 Portrait document (210mm x 297mm)
   const doc = new jsPDF({
@@ -130,7 +134,7 @@ export async function generateCertificatePDF(session: TestSession, level: string
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(colors.grayText.r, colors.grayText.g, colors.grayText.b);
-  doc.text('SLA Target: < 6.00 seconds', 14 + gridW/2, gridY + 28, { align: 'center' });
+  doc.text(`SLA Target: ${categoryConfig.levels.A.rangeShort} (Level A)`, 14 + gridW/2, gridY + 28, { align: 'center' });
 
   // Box 2: Entry Accuracy
   doc.setFillColor(colors.lightBg.r, colors.lightBg.g, colors.lightBg.b);
@@ -183,11 +187,12 @@ export async function generateCertificatePDF(session: TestSession, level: string
   // Thin separator line
   doc.line(30, 134, pageWidth - 30, 134);
 
-  // Status Compliance Paragraph
-  const compliesWithSLA = (session.averageTimeMs <= 6000) && (accuracyPercent >= 95);
+  // Status Compliance Paragraph (Level C or better + >= 95% accuracy)
+  const qualifiedPaceSec = categoryConfig.levels.C.maxMs / 1000;
+  const compliesWithSLA = (session.averageTimeMs <= categoryConfig.levels.C.maxMs) && (accuracyPercent >= 95);
   const complianceText = compliesWithSLA 
-    ? "CONFORMS TO STANDARD INVOICING SERVICE LEVEL AGREEMENTS (SLA)\nVerified: Met required transcription latency (< 6s) and precision rate (>= 95%)."
-    : "PERFORMANCE UNDER ASSESSMENT REVIEW (CURRENTLY NON-COMPLIANT)\nOperator falls below the standard SLA latency ceiling or the 95% accuracy parameter.";
+    ? `CONFORMS TO ${categoryConfig.categoryLabel.toUpperCase()} SERVICE LEVEL AGREEMENTS (SLA)\nVerified: Met required transcription pace (≤ ${qualifiedPaceSec.toFixed(2)}s) and precision rate (≥ 95%).`
+    : `PERFORMANCE UNDER ASSESSMENT REVIEW (CURRENTLY NON-COMPLIANT)\nOperator exceeds the category SLA pace ceiling (${qualifiedPaceSec.toFixed(2)}s) or falls below the 95% accuracy parameter.`;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);

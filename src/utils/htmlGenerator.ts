@@ -1,4 +1,5 @@
-import { TestSession, TypingDetail } from '../types';
+import { TestSession, TypingDetail, TrainingCategory } from '../types';
+import { CATEGORY_SLA_CONFIG } from './speedRanking';
 
 /**
  * Generates and downloads a self-contained, highly-polished, interactive HTML Performance Certificate & Audit Log.
@@ -11,19 +12,19 @@ import { TestSession, TypingDetail } from '../types';
  * @param rankName Formal evaluation rank name text
  */
 export function generateCertificateHTML(session: TestSession, level: string, rankName: string) {
+  const categoryKey: TrainingCategory = session.category || 'tax_number';
+  const categoryConfig = CATEGORY_SLA_CONFIG[categoryKey] || CATEGORY_SLA_CONFIG.tax_number;
+
   const traineeName = session.userId.charAt(0).toUpperCase() + session.userId.slice(1);
   const totalAttempted = session.totalImagesAttempted;
   const correctCount = session.correctEntries;
   const accuracyPercent = totalAttempted > 0 ? Math.round((correctCount / totalAttempted) * 100) : 100;
   const averagePaceSec = (session.averageTimeMs / 1000).toFixed(2);
-  const qualifiesSLA = (session.averageTimeMs <= 6000) && (accuracyPercent >= 95);
+  const qualifiedPaceSec = (categoryConfig.levels.C.maxMs / 1000).toFixed(2);
+  const qualifiesSLA = (session.averageTimeMs <= categoryConfig.levels.C.maxMs) && (accuracyPercent >= 95);
   const isHardMode = session.trainingMode === 'hard_180' || totalAttempted > 90;
   const isNormalMode = session.trainingMode === 'normal_90' || (totalAttempted > 20 && !isHardMode);
-  const categoryLabel = session.category === 'date_number' 
-    ? 'Date Number' 
-    : session.category === 'phone_number' 
-    ? 'Phone Number' 
-    : 'Tax Number (QIN)';
+  const categoryLabel = categoryConfig.categoryLabel;
   const modeLabel = isHardMode ? `Hard Mode [${categoryLabel}] (180 Invoices Extreme Endurance)` : isNormalMode ? `Normal Mode [${categoryLabel}] (90 Invoices Official Assessment)` : `Easy Mode [${categoryLabel}] (20 Invoices Practice Benchmark)`;
   const modeBadgeColor = isHardMode ? 'bg-purple-100 text-purple-800 border-purple-300' : isNormalMode ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200';
 
@@ -169,7 +170,7 @@ export function generateCertificateHTML(session: TestSession, level: string, ran
             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono-custom">Average Pace Per Invoice</p>
             <p class="text-2xl font-black text-slate-800 mt-1 font-mono-custom">${averagePaceSec}s</p>
             <div class="mt-2 text-[10px] inline-flex items-center gap-1 font-semibold text-slate-500">
-              SLA Standard: &lt; 6.00s
+              SLA Target: ${categoryConfig.levels.A.rangeShort} (Level A)
             </div>
           </div>
 

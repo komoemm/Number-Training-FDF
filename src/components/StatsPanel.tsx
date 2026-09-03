@@ -4,8 +4,9 @@
  */
 
 import React, { useState } from 'react';
-import { Award, Zap, Percent, Clock, Trophy, TrendingUp, Filter, Globe, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Award, Zap, Percent, Clock, Trophy, TrendingUp, Filter, Globe, Sparkles, CheckCircle2, Layers } from 'lucide-react';
 import { TestSession, LeaderboardEntry, TrainingMode, TrainingCategory } from '../types';
+import { evaluateCategoryLevel, getCategorySlaCards, CATEGORY_SLA_CONFIG } from '../utils/speedRanking';
 
 interface StatsPanelProps {
   currentIndex: number;
@@ -48,11 +49,12 @@ export default function StatsPanel({
     ? '📞 Phone Number' 
     : '🧾 Tax Number';
 
-  const slaTargetSec = category === 'date_number' ? '4.00s' : category === 'phone_number' ? '5.00s' : '6.00s';
+  const slaTargetSec = category === 'date_number' ? '1.30s' : category === 'phone_number' ? '2.50s' : '3.00s';
+  const slaTargetMs = category === 'date_number' ? 1300 : category === 'phone_number' ? 2500 : 3000;
 
   // Meter ratios
   const progressRatio = isTestActive ? Math.round(((currentIndex) / totalCount) * 100) : 100;
-  const clockRatio = isTestActive ? Math.min((elapsedMs / (category === 'date_number' ? 4000 : category === 'phone_number' ? 5000 : 6000)) * 100, 100) : 0;
+  const clockRatio = isTestActive ? Math.min((elapsedMs / slaTargetMs) * 100, 100) : 0;
   // Speed ratio: map 0-10s average to 100% to 0%
   const speedRatio = averageTimeMs > 0 ? Math.max(0, Math.min(100, Math.round(((10000 - averageTimeMs) / 10000) * 100))) : 0;
 
@@ -192,22 +194,27 @@ export default function StatsPanel({
 // -------------------------------------------------------------
 
 export type ModeFilter = 'normal_90' | 'hard_180' | 'easy_20' | 'all';
+export type CategoryFilter = 'tax_number' | 'phone_number' | 'date_number' | 'all';
 
 export interface SpeedDashboardProps {
   sessions: TestSession[];
   userId: string;
   isAdmin?: boolean;
   formatDate: (date: any) => string;
+  initialCategory?: TrainingCategory;
 }
 
 export function SpeedDashboard({
   sessions,
   userId,
   isAdmin = false,
-  formatDate
+  formatDate,
+  initialCategory
 }: SpeedDashboardProps) {
   // Requirement 1: Normal Mode (90 Invoices) is the strict DEFAULT view
   const [activeModeFilter, setActiveModeFilter] = useState<ModeFilter>('normal_90');
+  // Category-specific SLA filter: defaults to initialCategory or Tax Number
+  const [activeCategoryFilter, setActiveCategoryFilter] = useState<CategoryFilter>(initialCategory || 'tax_number');
 
   const getSessionMode = (session: TestSession): TrainingMode => {
     if (session.trainingMode) return session.trainingMode;
@@ -217,18 +224,12 @@ export function SpeedDashboard({
     return 'easy_20';
   };
 
-  const getLevelBySpeed = (timeMs: number): string => {
-    const avgSec = timeMs / 1000;
-    if (avgSec <= 3.0) return 'A';
-    if (avgSec <= 4.0) return 'B';
-    if (avgSec <= 5.0) return 'C';
-    return 'D';
-  };
-
-  // Filter sessions matching activeModeFilter (isolates Normal 90 vs Hard 180 vs Easy 20)
+  // Filter sessions matching activeModeFilter and activeCategoryFilter
   const filteredSessions = sessions.filter(session => {
-    if (activeModeFilter === 'all') return true;
-    return getSessionMode(session) === activeModeFilter;
+    const sessionCat = session.category || 'tax_number';
+    const matchesCategory = activeCategoryFilter === 'all' || sessionCat === activeCategoryFilter;
+    const matchesMode = activeModeFilter === 'all' || getSessionMode(session) === activeModeFilter;
+    return matchesCategory && matchesMode;
   });
 
   // Calculate Leaderboard based on filtered sessions
@@ -266,7 +267,8 @@ export function SpeedDashboard({
         ? Math.round((session.correctEntries / session.totalImagesAttempted) * 100) 
         : 100;
         
-      const lvl = session.level || getLevelBySpeed(session.averageTimeMs);
+      const sessionCat = session.category || (activeCategoryFilter !== 'all' ? activeCategoryFilter : 'tax_number');
+      const lvl = evaluateCategoryLevel(session.averageTimeMs, sessionCat);
       const totalRuns = filteredSessions.filter(s => (s.userId || s.operatorId) === u).length;
 
       return {
@@ -277,14 +279,15 @@ export function SpeedDashboard({
         accuracy: session.accuracy ?? accuracy,
         totalRuns,
         timestamp: session.timestamp,
-        trainingMode: getSessionMode(session)
+        trainingMode: getSessionMode(session),
+        category: sessionCat
       };
     });
 
     // Sort ascending by bestTimeMs (fastest speed first)
     leaderboardList.sort((a, b) => a.bestTimeMs - b.bestTimeMs);
 
-    // Compute distribution counts
+    // Compute distribution counts strictly tailored to the category thresholds
     const levelCounts = { A: 0, B: 0, C: 0, D: 0 };
     leaderboardList.forEach(entry => {
       const lvl = entry.level as 'A' | 'B' | 'C' | 'D';
@@ -307,102 +310,185 @@ export function SpeedDashboard({
   const myDashboardEntry = leaderboard.find(e => e.userId === userId || e.operatorId === userId);
   const myRank = myDashboardEntry ? leaderboard.indexOf(myDashboardEntry) + 1 : null;
 
+  // Active category SLA details for dynamic cards
+  const cardCategory: TrainingCategory = activeCategoryFilter === 'all' ? 'tax_number' : activeCategoryFilter;
+  const [cardA, cardB, cardC, cardD] = getCategorySlaCards(cardCategory);
+  const categoryConfig = CATEGORY_SLA_CONFIG[cardCategory];
+
   return (
     <div className="space-y-6 animate-fade-in" id="dashboard-tab-view">
       
-      {/* Requirement 3: Segmented Control with 3 Modes + Combined at the top of the leaderboard */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs" id="segmented-mode-bar-container">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-extrabold uppercase tracking-widest text-slate-500 pl-1 flex items-center gap-1.5 font-sans">
-            <Filter className="w-3.5 h-3.5 text-indigo-600" /> Mode Select:
-          </span>
-          <div 
-            className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200" 
-            id="speed-dashboard-mode-filter"
-            role="tablist"
-            aria-label="Speed assessment mode selection"
-          >
-            
-            {/* Option 1: Official Training (90 Invoices) [Default] */}
-            <button
-              onClick={() => setActiveModeFilter('normal_90')}
-              role="tab"
-              aria-selected={activeModeFilter === 'normal_90'}
-              aria-label="Official Training (90 Invoices) Mode"
-              className={`px-3.5 py-2 rounded-lg text-xs font-bold font-sans transition flex items-center gap-2 cursor-pointer ${
-                activeModeFilter === 'normal_90'
-                  ? 'bg-blue-600 text-white font-extrabold shadow-sm shadow-blue-600/20'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
-              id="filter-btn-normal"
+      {/* Category and Mode Selectors at the top of the leaderboard */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3.5" id="segmented-mode-bar-container">
+        
+        {/* Row 1: Category Filter Bar */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 pb-3 border-b border-slate-100">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-extrabold uppercase tracking-widest text-slate-500 pl-1 flex items-center gap-1.5 font-sans">
+              <Layers className="w-3.5 h-3.5 text-indigo-600" /> Assessment Category:
+            </span>
+            <div 
+              className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200" 
+              role="tablist"
+              aria-label="Speed assessment category selection"
             >
-              <span className={`w-2 h-2 rounded-full ${activeModeFilter === 'normal_90' ? 'bg-white animate-pulse' : 'bg-blue-600'}`}></span>
-              <span>🔵 Official Training (90) [Default]</span>
-            </button>
+              <button
+                onClick={() => setActiveCategoryFilter('tax_number')}
+                role="tab"
+                aria-selected={activeCategoryFilter === 'tax_number'}
+                aria-label="Tax Number (Rg) Category"
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold font-sans transition flex items-center gap-1.5 cursor-pointer ${
+                  activeCategoryFilter === 'tax_number'
+                    ? 'bg-indigo-600 text-white font-extrabold shadow-sm shadow-indigo-600/20'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                <span>🧾 Tax Number (Rg)</span>
+              </button>
 
-            {/* Option 2: Extreme Endurance (180 Invoices) */}
-            <button
-              onClick={() => setActiveModeFilter('hard_180')}
-              role="tab"
-              aria-selected={activeModeFilter === 'hard_180'}
-              aria-label="Extreme Endurance (180 Invoices) Mode"
-              className={`px-3.5 py-2 rounded-lg text-xs font-bold font-sans transition flex items-center gap-2 cursor-pointer ${
-                activeModeFilter === 'hard_180'
-                  ? 'bg-purple-600 text-white font-extrabold shadow-sm shadow-purple-600/20'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
-              id="filter-btn-hard"
-            >
-              <span className={`w-2 h-2 rounded-full ${activeModeFilter === 'hard_180' ? 'bg-white animate-pulse' : 'bg-purple-600'}`}></span>
-              <span>🟣 Extreme Endurance (180)</span>
-            </button>
+              <button
+                onClick={() => setActiveCategoryFilter('phone_number')}
+                role="tab"
+                aria-selected={activeCategoryFilter === 'phone_number'}
+                aria-label="Phone Number (Ph) Category"
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold font-sans transition flex items-center gap-1.5 cursor-pointer ${
+                  activeCategoryFilter === 'phone_number'
+                    ? 'bg-indigo-600 text-white font-extrabold shadow-sm shadow-indigo-600/20'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                <span>📞 Phone Number (Ph)</span>
+              </button>
 
-            {/* Option 3: Practice Benchmark (20 Invoices) */}
-            <button
-              onClick={() => setActiveModeFilter('easy_20')}
-              role="tab"
-              aria-selected={activeModeFilter === 'easy_20'}
-              aria-label="Practice Benchmark (20 Invoices) Mode"
-              className={`px-3.5 py-2 rounded-lg text-xs font-bold font-sans transition flex items-center gap-2 cursor-pointer ${
-                activeModeFilter === 'easy_20'
-                  ? 'bg-emerald-600 text-white font-extrabold shadow-sm shadow-emerald-600/20'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
-              id="filter-btn-easy"
-            >
-              <span className={`w-2 h-2 rounded-full ${activeModeFilter === 'easy_20' ? 'bg-white animate-pulse' : 'bg-emerald-600'}`}></span>
-              <span>🟢 Practice Benchmark (20)</span>
-            </button>
+              <button
+                onClick={() => setActiveCategoryFilter('date_number')}
+                role="tab"
+                aria-selected={activeCategoryFilter === 'date_number'}
+                aria-label="Date Number (DATE) Category"
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold font-sans transition flex items-center gap-1.5 cursor-pointer ${
+                  activeCategoryFilter === 'date_number'
+                    ? 'bg-indigo-600 text-white font-extrabold shadow-sm shadow-indigo-600/20'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                <span>📅 Date Number (DATE)</span>
+              </button>
 
-            {/* Option 4: Combined Logs */}
-            <button
-              onClick={() => setActiveModeFilter('all')}
-              role="tab"
-              aria-selected={activeModeFilter === 'all'}
-              aria-label="Combined All Logs Mode"
-              className={`px-3.5 py-2 rounded-lg text-xs font-bold font-sans transition flex items-center gap-2 cursor-pointer ${
-                activeModeFilter === 'all'
-                  ? 'bg-indigo-600 text-white font-extrabold shadow-sm shadow-indigo-600/20'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
-              id="filter-btn-all"
-            >
-              <Globe className="w-3.5 h-3.5" />
-              <span>🌐 Combined Logs</span>
-            </button>
+              <button
+                onClick={() => setActiveCategoryFilter('all')}
+                role="tab"
+                aria-selected={activeCategoryFilter === 'all'}
+                aria-label="All Categories"
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold font-sans transition flex items-center gap-1.5 cursor-pointer ${
+                  activeCategoryFilter === 'all'
+                    ? 'bg-slate-700 text-white font-extrabold shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                <Globe className="w-3.5 h-3.5" />
+                <span>All Categories</span>
+              </button>
+            </div>
+          </div>
 
+          <div className="text-[11px] text-slate-500 font-mono flex items-center gap-2 px-2">
+            <span>Standard: <strong className="text-indigo-600 uppercase font-sans font-bold">{categoryConfig.categoryLabel} ({categoryConfig.categoryCode})</strong></span>
           </div>
         </div>
 
-        {/* Mode Summary Indicator */}
-        <div className="text-[11px] text-slate-500 font-mono flex items-center gap-2.5 px-2">
-          <span>
-            Active View: <strong className="text-slate-800 uppercase font-sans">
-              {activeModeFilter === 'normal_90' ? '★ Official Assessment (90)' : activeModeFilter === 'hard_180' ? '⚡ Extreme Endurance (180)' : activeModeFilter === 'easy_20' ? 'Practice Benchmark (20)' : 'Combined All'}
-            </strong>
-          </span>
-          <span className="text-slate-300">|</span>
-          <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-700 font-semibold">{filteredSessions.length} sessions</span>
+        {/* Row 2: Mode Filter Bar */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-extrabold uppercase tracking-widest text-slate-500 pl-1 flex items-center gap-1.5 font-sans">
+              <Filter className="w-3.5 h-3.5 text-indigo-600" /> Mode Select:
+            </span>
+            <div 
+              className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200" 
+              id="speed-dashboard-mode-filter"
+              role="tablist"
+              aria-label="Speed assessment mode selection"
+            >
+              {/* Option 1: Official Training (90 Invoices) [Default] */}
+              <button
+                onClick={() => setActiveModeFilter('normal_90')}
+                role="tab"
+                aria-selected={activeModeFilter === 'normal_90'}
+                aria-label="Official Training (90 Invoices) Mode"
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold font-sans transition flex items-center gap-2 cursor-pointer ${
+                  activeModeFilter === 'normal_90'
+                    ? 'bg-blue-600 text-white font-extrabold shadow-sm shadow-blue-600/20'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+                id="filter-btn-normal"
+              >
+                <span className={`w-2 h-2 rounded-full ${activeModeFilter === 'normal_90' ? 'bg-white animate-pulse' : 'bg-blue-600'}`}></span>
+                <span>🔵 Official Training (90)</span>
+              </button>
+
+              {/* Option 2: Extreme Endurance (180 Invoices) */}
+              <button
+                onClick={() => setActiveModeFilter('hard_180')}
+                role="tab"
+                aria-selected={activeModeFilter === 'hard_180'}
+                aria-label="Extreme Endurance (180 Invoices) Mode"
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold font-sans transition flex items-center gap-2 cursor-pointer ${
+                  activeModeFilter === 'hard_180'
+                    ? 'bg-purple-600 text-white font-extrabold shadow-sm shadow-purple-600/20'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+                id="filter-btn-hard"
+              >
+                <span className={`w-2 h-2 rounded-full ${activeModeFilter === 'hard_180' ? 'bg-white animate-pulse' : 'bg-purple-600'}`}></span>
+                <span>🟣 Extreme Endurance (180)</span>
+              </button>
+
+              {/* Option 3: Practice Benchmark (20 Invoices) */}
+              <button
+                onClick={() => setActiveModeFilter('easy_20')}
+                role="tab"
+                aria-selected={activeModeFilter === 'easy_20'}
+                aria-label="Practice Benchmark (20 Invoices) Mode"
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold font-sans transition flex items-center gap-2 cursor-pointer ${
+                  activeModeFilter === 'easy_20'
+                    ? 'bg-emerald-600 text-white font-extrabold shadow-sm shadow-emerald-600/20'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+                id="filter-btn-easy"
+              >
+                <span className={`w-2 h-2 rounded-full ${activeModeFilter === 'easy_20' ? 'bg-white animate-pulse' : 'bg-emerald-600'}`}></span>
+                <span>🟢 Practice Benchmark (20)</span>
+              </button>
+
+              {/* Option 4: Combined Logs */}
+              <button
+                onClick={() => setActiveModeFilter('all')}
+                role="tab"
+                aria-selected={activeModeFilter === 'all'}
+                aria-label="Combined All Logs Mode"
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold font-sans transition flex items-center gap-2 cursor-pointer ${
+                  activeModeFilter === 'all'
+                    ? 'bg-indigo-600 text-white font-extrabold shadow-sm shadow-indigo-600/20'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+                id="filter-btn-all"
+              >
+                <Globe className="w-3.5 h-3.5" />
+                <span>🌐 All Modes</span>
+              </button>
+
+            </div>
+          </div>
+
+          {/* Mode Summary Indicator */}
+          <div className="text-[11px] text-slate-500 font-mono flex items-center gap-2.5 px-2">
+            <span>
+              Active Filter: <strong className="text-slate-800 uppercase font-sans">
+                {activeCategoryFilter === 'all' ? 'All Categories' : categoryConfig.categoryLabel} // {activeModeFilter === 'normal_90' ? '90 Invoices' : activeModeFilter === 'hard_180' ? '180 Invoices' : activeModeFilter === 'easy_20' ? '20 Invoices' : 'Combined'}
+              </strong>
+            </span>
+            <span className="text-slate-300">|</span>
+            <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-700 font-semibold">{filteredSessions.length} sessions</span>
+          </div>
         </div>
       </div>
 
@@ -411,24 +497,10 @@ export function SpeedDashboard({
         <div>
           <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 leading-none">
             <TrendingUp className="w-4 h-4 text-indigo-600" /> 
-            {activeModeFilter === 'normal_90' && 'Official SLA Level Rankings (90 Invoices)'}
-            {activeModeFilter === 'hard_180' && 'Extreme Endurance SLA Level Rankings (180 Invoices Master Tier)'}
-            {activeModeFilter === 'easy_20' && 'Practice Benchmark SLA Rankings (20 Invoices)'}
-            {activeModeFilter === 'all' && 'Combined SLA Level Rankings'}
+            {categoryConfig.categoryLabel} SLA Level Rankings ({categoryConfig.categoryCode})
           </h3>
           <p className="text-slate-500 text-xs mt-1.5">
-            {activeModeFilter === 'normal_90' && (
-              <>Official Japanese invoice standard requirement: <strong>under 6.00 seconds</strong> per document across 90 invoices with ≥ 95% accuracy.</>
-            )}
-            {activeModeFilter === 'hard_180' && (
-              <>Extreme endurance master tier standard: sustained speed <strong>under 6.00 seconds</strong> (target &lt; 3.00s for Level A) across 180 invoices with ≥ 95% accuracy.</>
-            )}
-            {activeModeFilter === 'easy_20' && (
-              <>Practice speed benchmark: <strong>20-invoice warm-up drill</strong> for entry rhythm and typing speed tuning.</>
-            )}
-            {activeModeFilter === 'all' && (
-              <>Aggregated performance records across all official 90-invoice endurance, 180-invoice extreme master, and 20-invoice warm-up sessions.</>
-            )}
+            Category-tailored SLA standard: Level A <strong className="text-slate-800 font-mono">{cardA.rangeShort}</strong> ({cardA.rangeDetail}), Level B <strong className="text-slate-800 font-mono">{cardB.rangeShort}</strong>, Level C <strong className="text-slate-800 font-mono">{cardC.rangeShort}</strong>, Level D <strong className="text-slate-800 font-mono">{cardD.rangeShort}</strong> with ≥ 95% accuracy.
           </p>
         </div>
         {myDashboardEntry ? (
@@ -454,13 +526,13 @@ export function SpeedDashboard({
           </div>
         ) : (
           <div className="bg-white border border-slate-250 p-2.5 px-4 rounded-lg self-start md:self-auto text-slate-500 text-xs">
-            No speed sessions recorded yet in <strong className="text-slate-800">{activeModeFilter === 'normal_90' ? 'Official 90 Mode' : activeModeFilter === 'hard_180' ? 'Hard 180 Mode' : activeModeFilter === 'easy_20' ? 'Practice 20 Mode' : 'any mode'}</strong> for <strong className="text-slate-800">{userId}</strong>.
+            No speed sessions recorded yet in <strong className="text-slate-800">{categoryConfig.categoryLabel}</strong> for <strong className="text-slate-800">{userId}</strong>.
           </div>
         )}
       </div>
 
-      {/* 2. Level Distribution Bento Cards (Strictly calculated from filtered mode) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 2. Level Distribution Bento Cards (Strictly tailored to category SLA matrix) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" id="category-sla-distribution-cards">
         
         {/* Level A Card */}
         <div className="bg-white border border-emerald-100 rounded-xl p-4 shadow-sm relative overflow-hidden flex flex-col justify-between">
@@ -472,12 +544,12 @@ export function SpeedDashboard({
               <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-150 px-2 py-0.5 rounded uppercase tracking-wider font-sans">
                 Level A
               </span>
-              <span className="text-xs text-slate-400 font-medium">
-                {activeModeFilter === 'hard_180' ? 'Master Endurance' : 'Expert Tier'}
+              <span className="text-xs text-emerald-600 font-mono font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                {cardA.rangeShort}
               </span>
             </div>
             <h4 className="text-xs font-semibold text-slate-500 mt-3 uppercase tracking-wider font-sans">Speed Ceiling</h4>
-            <strong className="block text-slate-800 text-sm mt-0.5">Under 3.00 seconds</strong>
+            <strong className="block text-slate-800 text-sm mt-0.5 font-sans">{cardA.rangeDetail}</strong>
           </div>
           <div className="mt-5 pt-3 border-t border-slate-100 flex items-baseline justify-between">
             <span className="text-2xl font-bold text-slate-800 font-sans">{levelCounts.A}</span>
@@ -485,7 +557,7 @@ export function SpeedDashboard({
               {totalTraineesCount > 0 ? Math.round((levelCounts.A / totalTraineesCount) * 100) : 0}% of operators
             </span>
           </div>
-          <div className="w-full bg-slate-100 h-1 rounded overflow-hidden mt-2">
+          <div className="w-full bg-slate-100 h-1.5 rounded overflow-hidden mt-2">
             <div className="bg-emerald-500 h-full transition-all duration-300" style={{ width: `${totalTraineesCount > 0 ? (levelCounts.A / totalTraineesCount) * 100 : 0}%` }}></div>
           </div>
         </div>
@@ -500,10 +572,12 @@ export function SpeedDashboard({
               <span className="text-[10px] font-extrabold text-indigo-805 bg-indigo-50 border border-indigo-150 px-2 py-0.5 rounded uppercase tracking-wider font-sans w-fit">
                 Level B
               </span>
-              <span className="text-xs text-slate-400 font-medium">Specialist</span>
+              <span className="text-xs text-indigo-600 font-mono font-bold bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                {cardB.rangeShort}
+              </span>
             </div>
-            <h4 className="text-xs font-semibold text-slate-500 mt-3 uppercase tracking-wider font-sans">Speed Ceiling</h4>
-            <strong className="block text-slate-800 text-sm mt-0.5 font-sans">3.01 ~ 4.00 seconds</strong>
+            <h4 className="text-xs font-semibold text-slate-500 mt-3 uppercase tracking-wider font-sans">Speed Range</h4>
+            <strong className="block text-slate-800 text-sm mt-0.5 font-sans">{cardB.rangeDetail}</strong>
           </div>
           <div className="mt-5 pt-3 border-t border-slate-100 flex items-baseline justify-between">
             <span className="text-2xl font-bold text-slate-800 font-sans">{levelCounts.B}</span>
@@ -511,7 +585,7 @@ export function SpeedDashboard({
               {totalTraineesCount > 0 ? Math.round((levelCounts.B / totalTraineesCount) * 100) : 0}% of operators
             </span>
           </div>
-          <div className="w-full bg-slate-100 h-1 rounded overflow-hidden mt-2">
+          <div className="w-full bg-slate-100 h-1.5 rounded overflow-hidden mt-2">
             <div className="bg-indigo-500 h-full transition-all duration-300" style={{ width: `${totalTraineesCount > 0 ? (levelCounts.B / totalTraineesCount) * 100 : 0}%` }}></div>
           </div>
         </div>
@@ -526,10 +600,12 @@ export function SpeedDashboard({
               <span className="text-[10px] font-extrabold text-amber-805 bg-amber-50 border border-amber-150 px-2 py-0.5 rounded uppercase tracking-wider font-sans w-fit">
                 Level C
               </span>
-              <span className="text-xs text-slate-400 font-medium">Qualified</span>
+              <span className="text-xs text-amber-600 font-mono font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">
+                {cardC.rangeShort}
+              </span>
             </div>
-            <h4 className="text-xs font-semibold text-slate-500 mt-3 uppercase tracking-wider font-sans">Speed Ceiling</h4>
-            <strong className="block text-slate-800 text-sm mt-0.5 font-sans">4.01 ~ 5.00 seconds</strong>
+            <h4 className="text-xs font-semibold text-slate-500 mt-3 uppercase tracking-wider font-sans">Speed Range</h4>
+            <strong className="block text-slate-800 text-sm mt-0.5 font-sans">{cardC.rangeDetail}</strong>
           </div>
           <div className="mt-5 pt-3 border-t border-slate-100 flex items-baseline justify-between">
             <span className="text-2xl font-bold text-slate-800 font-sans">{levelCounts.C}</span>
@@ -537,7 +613,7 @@ export function SpeedDashboard({
               {totalTraineesCount > 0 ? Math.round((levelCounts.C / totalTraineesCount) * 100) : 0}% of operators
             </span>
           </div>
-          <div className="w-full bg-slate-100 h-1 rounded overflow-hidden mt-2">
+          <div className="w-full bg-slate-100 h-1.5 rounded overflow-hidden mt-2">
             <div className="bg-amber-500 h-full transition-all duration-300" style={{ width: `${totalTraineesCount > 0 ? (levelCounts.C / totalTraineesCount) * 100 : 0}%` }}></div>
           </div>
         </div>
@@ -552,10 +628,12 @@ export function SpeedDashboard({
               <span className="text-[10px] font-extrabold text-rose-805 bg-rose-50 border border-rose-150 px-2 py-0.5 rounded uppercase tracking-wider font-sans w-fit">
                 Level D
               </span>
-              <span className="text-xs text-slate-400 font-medium">Practitioner</span>
+              <span className="text-xs text-rose-600 font-mono font-bold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100">
+                {cardD.rangeShort}
+              </span>
             </div>
             <h4 className="text-xs font-semibold text-slate-500 mt-3 uppercase tracking-wider font-sans">Speed Standard</h4>
-            <strong className="block text-slate-800 text-sm mt-0.5 font-sans">&gt; 5.00 seconds</strong>
+            <strong className="block text-slate-800 text-sm mt-0.5 font-sans">{cardD.rangeDetail}</strong>
           </div>
           <div className="mt-5 pt-3 border-t border-slate-100 flex items-baseline justify-between">
             <span className="text-2xl font-bold text-slate-800 font-sans">{levelCounts.D}</span>
@@ -563,7 +641,7 @@ export function SpeedDashboard({
               {totalTraineesCount > 0 ? Math.round((levelCounts.D / totalTraineesCount) * 100) : 0}% of operators
             </span>
           </div>
-          <div className="w-full bg-slate-100 h-1 rounded overflow-hidden mt-2">
+          <div className="w-full bg-slate-100 h-1.5 rounded overflow-hidden mt-2">
             <div className="bg-rose-500 h-full transition-all duration-300" style={{ width: `${totalTraineesCount > 0 ? (levelCounts.D / totalTraineesCount) * 100 : 0}%` }}></div>
           </div>
         </div>
@@ -636,6 +714,7 @@ export function SpeedDashboard({
                 <tr className="border-b border-slate-200 text-slate-500 uppercase pb-3 text-[10px] font-bold bg-slate-50/70 font-sans">
                   <th className="py-3 px-5 text-left w-20">Rank</th>
                   <th className="py-3">Trainee Operator Name</th>
+                  <th className="py-3">Category</th>
                   <th className="py-3">Mode</th>
                   <th className="py-3">Level Reached</th>
                   <th className="py-3 font-mono">Best Averaged Speed</th>
@@ -681,6 +760,12 @@ export function SpeedDashboard({
                               ✦ You
                             </span>
                           )}
+                        </span>
+                      </td>
+
+                      <td className="py-3.5">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 inline-block font-sans">
+                          {entry.category === 'date_number' ? '📅 DATE' : entry.category === 'phone_number' ? '📞 Ph' : '🧾 Rg'}
                         </span>
                       </td>
 

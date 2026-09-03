@@ -16,6 +16,7 @@ import {
 } from './utils/receiptGenerator';
 import { generateCertificatePDF } from './utils/pdfGenerator';
 import { generateCertificateHTML } from './utils/htmlGenerator';
+import { evaluateCategoryLevel, getCategoryRankDetails, CATEGORY_SLA_CONFIG } from './utils/speedRanking';
 import { GeneratedInvoiceData, TypingDetail, TestSession, TrainingMode, TrainingCategory } from './types';
 import InvoiceViewer from './components/InvoiceViewer';
 import StatsPanel from './components/StatsPanel';
@@ -1024,22 +1025,7 @@ export default function App() {
     const avgMs = completedResults.length > 0 ? Math.round(totalMs / completedResults.length) : 0;
     setAverageTimeMs(avgMs);
 
-    const avgSec = avgMs / 1000;
-    let calculatedLevel = 'D';
-
-    if (category === 'date_number') {
-      if (avgSec <= 2.0) calculatedLevel = 'A';
-      else if (avgSec <= 2.8) calculatedLevel = 'B';
-      else if (avgSec <= 3.6) calculatedLevel = 'C';
-    } else if (category === 'phone_number') {
-      if (avgSec <= 2.5) calculatedLevel = 'A';
-      else if (avgSec <= 3.5) calculatedLevel = 'B';
-      else if (avgSec <= 4.5) calculatedLevel = 'C';
-    } else {
-      if (avgSec <= 3.0) calculatedLevel = 'A';
-      else if (avgSec <= 4.0) calculatedLevel = 'B';
-      else if (avgSec <= 5.0) calculatedLevel = 'C';
-    }
+    const calculatedLevel = evaluateCategoryLevel(avgMs, category);
 
     setIsSaving(true);
     setSaveError(null);
@@ -1126,47 +1112,13 @@ export default function App() {
 
   // Determine typing tier dynamically by category
   const evaluateRank = () => {
-    const avgSec = averageTimeMs / 1000;
-    const cat = activeTrainingCategory;
-
-    if (cat === 'date_number') {
-      if (avgSec <= 2.0) return { name: 'Level A (Elite Expert: ≤2.0s)', color: 'text-emerald-600 bg-emerald-50/80 border-emerald-200 font-extrabold shadow-sm' };
-      if (avgSec <= 2.8) return { name: 'Level B (Proficient: 2.1s ~ 2.8s)', color: 'text-indigo-650 bg-indigo-50/80 border-indigo-200 font-bold' };
-      if (avgSec <= 3.6) return { name: 'Level C (Qualified: 2.9s ~ 3.6s)', color: 'text-amber-650 bg-amber-50/80 border-amber-200 font-bold' };
-      return { name: 'Level D (Needs Practice: > 3.6s)', color: 'text-rose-600 bg-rose-50/80 border-rose-250 font-bold' };
-    } else if (cat === 'phone_number') {
-      if (avgSec <= 2.5) return { name: 'Level A (Elite Expert: ≤2.5s)', color: 'text-emerald-600 bg-emerald-50/80 border-emerald-200 font-extrabold shadow-sm' };
-      if (avgSec <= 3.5) return { name: 'Level B (Proficient: 2.6s ~ 3.5s)', color: 'text-indigo-650 bg-indigo-50/80 border-indigo-200 font-bold' };
-      if (avgSec <= 4.5) return { name: 'Level C (Qualified: 3.6s ~ 4.5s)', color: 'text-amber-650 bg-amber-50/80 border-amber-200 font-bold' };
-      return { name: 'Level D (Needs Practice: > 4.5s)', color: 'text-rose-600 bg-rose-50/80 border-rose-250 font-bold' };
-    } else {
-      if (avgSec <= 3.0) return { name: 'Level A (Elite Expert: 2.5s ~ 3.0s)', color: 'text-emerald-600 bg-emerald-50/80 border-emerald-200 font-extrabold shadow-sm' };
-      if (avgSec <= 4.0) return { name: 'Level B (Proficient: 3.1s ~ 4.0s)', color: 'text-indigo-650 bg-indigo-50/80 border-indigo-200 font-bold' };
-      if (avgSec <= 5.0) return { name: 'Level C (Qualified: 4.1s ~ 5.0s)', color: 'text-amber-650 bg-amber-50/80 border-amber-200 font-bold' };
-      return { name: 'Level D (Needs Practice: > 5.0s)', color: 'text-rose-600 bg-rose-50/80 border-rose-250 font-bold' };
-    }
+    return getCategoryRankDetails(averageTimeMs, activeTrainingCategory);
   };
 
   const currentRank = evaluateRank();
 
   const handleDownloadPDF = () => {
-    const avgSec = averageTimeMs / 1000;
-    const cat = activeTrainingCategory;
-    let levelCode = 'D';
-
-    if (cat === 'date_number') {
-      if (avgSec <= 2.0) levelCode = 'A';
-      else if (avgSec <= 2.8) levelCode = 'B';
-      else if (avgSec <= 3.6) levelCode = 'C';
-    } else if (cat === 'phone_number') {
-      if (avgSec <= 2.5) levelCode = 'A';
-      else if (avgSec <= 3.5) levelCode = 'B';
-      else if (avgSec <= 4.5) levelCode = 'C';
-    } else {
-      if (avgSec <= 3.0) levelCode = 'A';
-      else if (avgSec <= 4.0) levelCode = 'B';
-      else if (avgSec <= 5.0) levelCode = 'C';
-    }
+    const rankDetails = getCategoryRankDetails(averageTimeMs, activeTrainingCategory);
 
     const testSessionPayload: TestSession = {
       userId: currentOfflineUser ? currentOfflineUser.username : 'guest',
@@ -1177,33 +1129,17 @@ export default function App() {
       averageTimeMs: averageTimeMs,
       averageSpeed: +(averageTimeMs / 1000).toFixed(2),
       accuracy: expectedDataset.length > 0 ? Math.round((correctCount / expectedDataset.length) * 100) : 100,
-      level: levelCode,
+      level: rankDetails.level,
       trainingMode: trainingMode,
       category: activeTrainingCategory,
       details: sessionResults
     };
 
-    generateCertificatePDF(testSessionPayload, levelCode, currentRank.name);
+    generateCertificatePDF(testSessionPayload, rankDetails.level, rankDetails.name);
   };
 
   const handleDownloadHTML = () => {
-    const avgSec = averageTimeMs / 1000;
-    const cat = activeTrainingCategory;
-    let levelCode = 'D';
-
-    if (cat === 'date_number') {
-      if (avgSec <= 2.0) levelCode = 'A';
-      else if (avgSec <= 2.8) levelCode = 'B';
-      else if (avgSec <= 3.6) levelCode = 'C';
-    } else if (cat === 'phone_number') {
-      if (avgSec <= 2.5) levelCode = 'A';
-      else if (avgSec <= 3.5) levelCode = 'B';
-      else if (avgSec <= 4.5) levelCode = 'C';
-    } else {
-      if (avgSec <= 3.0) levelCode = 'A';
-      else if (avgSec <= 4.0) levelCode = 'B';
-      else if (avgSec <= 5.0) levelCode = 'C';
-    }
+    const rankDetails = getCategoryRankDetails(averageTimeMs, activeTrainingCategory);
 
     const testSessionPayload: TestSession = {
       userId: currentOfflineUser ? currentOfflineUser.username : 'guest',
@@ -1214,13 +1150,13 @@ export default function App() {
       averageTimeMs: averageTimeMs,
       averageSpeed: +(averageTimeMs / 1000).toFixed(2),
       accuracy: expectedDataset.length > 0 ? Math.round((correctCount / expectedDataset.length) * 100) : 100,
-      level: levelCode,
+      level: rankDetails.level,
       trainingMode: trainingMode,
       category: activeTrainingCategory,
       details: sessionResults
     };
 
-    generateCertificateHTML(testSessionPayload, levelCode, currentRank.name);
+    generateCertificateHTML(testSessionPayload, rankDetails.level, rankDetails.name);
   };
 
   // If user is not authenticated locally, show Login Screen
@@ -1234,7 +1170,7 @@ export default function App() {
   }
 
   // Active Category SLA target & label helpers
-  const categorySlaTarget = activeTrainingCategory === 'date_number' ? 4000 : activeTrainingCategory === 'phone_number' ? 5000 : 6000;
+  const categorySlaTarget = CATEGORY_SLA_CONFIG[activeTrainingCategory]?.levels.C.maxMs || 3700;
   const categorySlaLimitSec = (categorySlaTarget / 1000).toFixed(1);
 
   return (
@@ -1960,7 +1896,7 @@ export default function App() {
                   {/* Rank Display Badge */}
                   <div className="flex items-center gap-2 justify-center md:justify-start">
                     <span className="text-xs uppercase text-slate-400 font-bold tracking-widest font-mono">Evaluation Rating:</span>
-                    <span className={`text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-wider ${currentRank.color}`}>
+                    <span className={`text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-wider border ${currentRank.color}`}>
                       {currentRank.name}
                     </span>
                   </div>

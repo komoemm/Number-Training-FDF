@@ -172,7 +172,14 @@ export default function App() {
       createdAt: new Date().toISOString().split('T')[0]
     };
 
-    setLocalUsers(prev => [...prev, newOperator]);
+    const updatedUsers = [...localUsers, newOperator];
+    setLocalUsers(updatedUsers);
+    try {
+      sessionStorage.setItem('cached_sandbox_users', JSON.stringify({
+        timestamp: Date.now(),
+        data: updatedUsers
+      }));
+    } catch {}
 
     if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
@@ -263,7 +270,14 @@ export default function App() {
     }
 
     // 1. Sync to memory & Local Storage
-    setLocalUsers(prev => [...prev, ...createdUsers]);
+    const allUsersBatch = [...localUsers, ...createdUsers];
+    setLocalUsers(allUsersBatch);
+    try {
+      sessionStorage.setItem('cached_sandbox_users', JSON.stringify({
+        timestamp: Date.now(),
+        data: allUsersBatch
+      }));
+    } catch {}
 
     // 2. Sync to Firestore in parallel using Promise.all
     if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
@@ -305,7 +319,14 @@ export default function App() {
     
     if (force || userPendingDelete === uname) {
       const unameLower = uname.toLowerCase();
-      setLocalUsers(prev => prev.filter(u => u.username.toLowerCase() !== unameLower));
+      const filteredUsers = localUsers.filter(u => u.username.toLowerCase() !== unameLower);
+      setLocalUsers(filteredUsers);
+      try {
+        sessionStorage.setItem('cached_sandbox_users', JSON.stringify({
+          timestamp: Date.now(),
+          data: filteredUsers
+        }));
+      } catch {}
       
       if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
         try {
@@ -389,16 +410,19 @@ export default function App() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [cheatTriggerMsg, setCheatTriggerMsg] = useState<string | null>(null);
   const [latestSessionByMe, setLatestSessionByMe] = useState<any>(null);
+  const [isRefreshingInvoices, setIsRefreshingInvoices] = useState<boolean>(false);
+
+  const TEN_MINUTES_MS = 10 * 60 * 1000;
 
   useEffect(() => {
-    if (!currentOfflineUser) {
-      setLatestSessionByMe(null);
+    if (!currentOfflineUser || isTestActive) {
+      if (!currentOfflineUser) setLatestSessionByMe(null);
       return;
     }
     const loadLatestSession = async () => {
       const activeUserId = currentOfflineUser.username;
       
-      // Try local fallback first
+      // 1. Try local cache first
       let localLatest: any = null;
       try {
         const localData = localStorage.getItem('local_test_sessions');
@@ -410,10 +434,30 @@ export default function App() {
           }
         }
       } catch (err) {
-        console.error('Error loading latest local session:', err);
+        console.warn('Error reading local session history:', err);
+      }
+
+      // 2. Check session cache for latest cloud session (avoids redundant reads across components)
+      const sessionCacheKey = `cached_latest_session_${activeUserId}`;
+      try {
+        const cachedRaw = sessionStorage.getItem(sessionCacheKey);
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw);
+          const ageMs = Date.now() - (cached.timestamp || 0);
+          if (ageMs < TEN_MINUTES_MS && cached.data) {
+            setLatestSessionByMe({
+              ...cached.data,
+              timestamp: new Date(cached.data.timestamp)
+            });
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Notice reading session cache for latest session:', err);
       }
       
-      if (isFirebaseActive && db && activeUserId !== 'sandbox_guest_uid' && !sessionStorage.getItem('firestore_quota_exceeded')) {
+      // 3. Query Firestore only if cache empty and not in active test run
+      if (isFirebaseActive && db && activeUserId !== 'sandbox_guest_uid' && !sessionStorage.getItem('firestore_quota_exceeded') && !isTestActive) {
         try {
           const path = 'test_sessions';
           const queryRef = query(
@@ -450,13 +494,21 @@ export default function App() {
               else if (avgSec <= 5.0) computedLvl = 'C';
             }
 
-            setLatestSessionByMe({
+            const sessionObj = {
               ...firstDoc,
               id: snapshot.docs[0].id,
               timestamp: timestampDate,
               level: computedLvl,
               category
-            });
+            };
+
+            setLatestSessionByMe(sessionObj);
+            try {
+              sessionStorage.setItem(sessionCacheKey, JSON.stringify({
+                timestamp: Date.now(),
+                data: sessionObj
+              }));
+            } catch {}
             return;
           }
         } catch (err) {
@@ -497,10 +549,27 @@ export default function App() {
       }
     };
     loadLatestSession();
-  }, [currentOfflineUser, refreshTrigger]);
+  }, [currentOfflineUser, refreshTrigger, isTestActive]);
 
-  const fetchSandboxUsers = async () => {
-    if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
+  const fetchSandboxUsers = async (forceRefresh = false) => {
+    // Check session cache first
+    if (!forceRefresh) {
+      try {
+        const cachedRaw = sessionStorage.getItem('cached_sandbox_users');
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw);
+          const ageMs = Date.now() - (cached.timestamp || 0);
+          if (ageMs < TEN_MINUTES_MS && Array.isArray(cached.data) && cached.data.length > 0) {
+            setLocalUsers(cached.data);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Notice reading cached sandbox users:', err);
+      }
+    }
+
+    if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded') && !isTestActive) {
       try {
         const querySnapshot = await getDocs(collection(db, 'sandbox_users'));
         const users: any[] = [];
@@ -510,6 +579,12 @@ export default function App() {
         
         if (users.length > 0) {
           setLocalUsers(users);
+          try {
+            sessionStorage.setItem('cached_sandbox_users', JSON.stringify({
+              timestamp: Date.now(),
+              data: users
+            }));
+          } catch {}
         } else {
           const defaultUsers = [
             { username: 'admin', passwordText: 'admin', role: 'admin', createdAt: '2026-05-22' },
@@ -519,6 +594,12 @@ export default function App() {
             await setDoc(doc(db, 'sandbox_users', u.username), u);
           }
           setLocalUsers(defaultUsers);
+          try {
+            sessionStorage.setItem('cached_sandbox_users', JSON.stringify({
+              timestamp: Date.now(),
+              data: defaultUsers
+            }));
+          } catch {}
         }
       } catch (err) {
         if (isQuotaError(err)) {
@@ -532,8 +613,32 @@ export default function App() {
     }
   };
 
-  const fetchCustomInvoices = async () => {
-    if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
+  const fetchCustomInvoices = async (forceRefresh = false) => {
+    // 1. Strict Session Caching: If cached within 10 minutes and not force refreshing, load directly from memory/sessionStorage
+    if (!forceRefresh) {
+      try {
+        const cachedRaw = sessionStorage.getItem('cached_cloud_invoices');
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw);
+          const ageMs = Date.now() - (cached.timestamp || 0);
+          if (ageMs < TEN_MINUTES_MS && Array.isArray(cached.data)) {
+            if (cached.data.length > 0) {
+              setCustomInvoices(cached.data);
+            }
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Notice reading cached custom invoices:', err);
+      }
+    }
+
+    if (forceRefresh) {
+      setIsRefreshingInvoices(true);
+    }
+
+    // 2. Query Firestore only if cache is empty or Admin explicitly requested Sync/Refresh Pool
+    if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded') && !isTestActive) {
       try {
         const querySnapshot = await getDocs(collection(db, 'custom_invoices'));
         const invoices: any[] = [];
@@ -547,6 +652,12 @@ export default function App() {
         if (invoices.length > 0) {
           setCustomInvoices(invoices);
         }
+        try {
+          sessionStorage.setItem('cached_cloud_invoices', JSON.stringify({
+            timestamp: Date.now(),
+            data: invoices
+          }));
+        } catch {}
       } catch (err) {
         if (isQuotaError(err)) {
           setIsQuotaExceeded(true);
@@ -555,31 +666,43 @@ export default function App() {
         } else {
           console.warn('Notice loading custom invoices from Firestore:', err);
         }
+      } finally {
+        if (forceRefresh) {
+          setIsRefreshingInvoices(false);
+        }
+      }
+    } else {
+      if (forceRefresh) {
+        setIsRefreshingInvoices(false);
       }
     }
   };
 
-  // Listen to Firebase Authenticated user states
+  // Listen to Firebase Authenticated user states (once on mount)
   useEffect(() => {
     if (isFirebaseActive && auth) {
       const unsubscribe = onAuthStateChanged(auth, async (user) => {
         if (!user) {
           setCurrentUser(null);
           setAuthLoading(false);
-          fetchSandboxUsers();
-          fetchCustomInvoices();
+          if (!isTestActive) {
+            fetchSandboxUsers();
+            fetchCustomInvoices();
+          }
         } else {
           setCurrentUser(user);
           setAuthLoading(false);
-          fetchSandboxUsers();
-          fetchCustomInvoices();
+          if (!isTestActive) {
+            fetchSandboxUsers();
+            fetchCustomInvoices();
+          }
         }
       });
       return unsubscribe;
     } else {
       setAuthLoading(false);
     }
-  }, [refreshTrigger]);
+  }, []);
 
   // Sync state loops to increment active item chronometer clock
   useEffect(() => {
@@ -809,6 +932,12 @@ export default function App() {
     } catch (err) {
       console.warn('LocalStorage quota exceeded:', err);
     }
+    try {
+      sessionStorage.setItem('cached_cloud_invoices', JSON.stringify({
+        timestamp: Date.now(),
+        data: updated
+      }));
+    } catch {}
 
     if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
@@ -840,6 +969,12 @@ export default function App() {
     const updated = [...customInvoices, newCustom];
     setCustomInvoices(updated);
     localStorage.setItem('custom_uploaded_invoices', JSON.stringify(updated));
+    try {
+      sessionStorage.setItem('cached_cloud_invoices', JSON.stringify({
+        timestamp: Date.now(),
+        data: updated
+      }));
+    } catch {}
 
     if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
@@ -863,6 +998,12 @@ export default function App() {
     const updated = customInvoices.filter(item => (item.category || 'tax_number') !== category);
     setCustomInvoices(updated);
     localStorage.setItem('custom_uploaded_invoices', JSON.stringify(updated));
+    try {
+      sessionStorage.setItem('cached_cloud_invoices', JSON.stringify({
+        timestamp: Date.now(),
+        data: updated
+      }));
+    } catch {}
 
     if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
@@ -892,6 +1033,12 @@ export default function App() {
     const updated = customInvoices.filter(item => item.id !== id);
     setCustomInvoices(updated);
     localStorage.setItem('custom_uploaded_invoices', JSON.stringify(updated));
+    try {
+      sessionStorage.setItem('cached_cloud_invoices', JSON.stringify({
+        timestamp: Date.now(),
+        data: updated
+      }));
+    } catch {}
 
     if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
@@ -923,6 +1070,12 @@ export default function App() {
     try {
       localStorage.setItem('custom_uploaded_invoices', JSON.stringify(updated));
     } catch {}
+    try {
+      sessionStorage.setItem('cached_cloud_invoices', JSON.stringify({
+        timestamp: Date.now(),
+        data: updated
+      }));
+    } catch {}
 
     const matched = updated.find(inv => inv.id === id);
     if (isFirebaseActive && db && matched && !sessionStorage.getItem('firestore_quota_exceeded')) {
@@ -953,6 +1106,12 @@ export default function App() {
     setCustomInvoices(updated);
     try {
       localStorage.setItem('custom_uploaded_invoices', JSON.stringify(updated));
+    } catch {}
+    try {
+      sessionStorage.setItem('cached_cloud_invoices', JSON.stringify({
+        timestamp: Date.now(),
+        data: updated
+      }));
     } catch {}
 
     const matched = updated.find(inv => inv.id === id);
@@ -1177,6 +1336,21 @@ export default function App() {
         }
       }
     }
+
+    const completedSessionObj = {
+      id: `session_${now.getTime()}`,
+      ...rawPayload,
+      timestamp: now,
+      level: calculatedLevel,
+      category
+    };
+    setLatestSessionByMe(completedSessionObj);
+    try {
+      sessionStorage.setItem(`cached_latest_session_${activeUserId}`, JSON.stringify({
+        timestamp: Date.now(),
+        data: completedSessionObj
+      }));
+    } catch {}
 
     setIsSaving(false);
     setRefreshTrigger(prev => prev + 1);
@@ -1445,6 +1619,8 @@ export default function App() {
                     customCompanyName={customCompanyName}
                     setCustomCompanyName={setCustomCompanyName}
                     isAdmin={currentOfflineUser?.role === 'admin'}
+                    onRefreshPool={() => fetchCustomInvoices(true)}
+                    isRefreshingPool={isRefreshingInvoices}
                   />
                 ) : (
                   /* Tab 4: Trainee Accounts Management Tab (Admin Only) */

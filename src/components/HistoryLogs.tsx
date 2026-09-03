@@ -34,20 +34,66 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
   const [sessionPendingDeleteId, setSessionPendingDeleteId] = useState<string | null>(null);
   const [loginPendingDeleteId, setLoginPendingDeleteId] = useState<string | null>(null);
 
+  const TEN_MINUTES_MS = 10 * 60 * 1000;
+
+  // Cache-aware Tab Switching: Only fetch if state & session cache are empty
   useEffect(() => {
     if (activeTab === 'typing' || activeTab === 'dashboard') {
-      fetchSessionHistory();
-    } else {
-      fetchLoginHistory();
+      if (sessions.length === 0) {
+        fetchSessionHistory(false);
+      }
+    } else if (activeTab === 'login') {
+      if (loginLogs.length === 0) {
+        fetchLoginHistory(false);
+      }
     }
-  }, [userId, refreshTrigger, isAdmin, activeTab]);
+  }, [userId, isAdmin, activeTab]);
 
-  const fetchSessionHistory = async () => {
+  // When refreshTrigger increments (e.g. newly submitted typing run), invalidate and reload
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      try {
+        sessionStorage.removeItem('cached_session_history');
+      } catch {}
+      if (activeTab === 'typing' || activeTab === 'dashboard') {
+        fetchSessionHistory(true);
+      }
+    }
+  }, [refreshTrigger]);
+
+  const fetchSessionHistory = async (forceCloud = false) => {
+    // 1. In-memory check: if data already loaded in state and not forcing cloud sync, return immediately
+    if (!forceCloud && sessions.length > 0) {
+      return;
+    }
+
+    // 2. SessionStorage cache check: if cached within 10 minutes, restore from storage without Firestore reads
+    if (!forceCloud) {
+      try {
+        const cachedRaw = sessionStorage.getItem('cached_session_history');
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw);
+          const ageMs = Date.now() - (cached.timestamp || 0);
+          if (ageMs < TEN_MINUTES_MS && Array.isArray(cached.data) && cached.data.length > 0) {
+            const restoredSessions: TestSession[] = cached.data.map((s: any) => ({
+              ...s,
+              timestamp: new Date(s.timestamp)
+            }));
+            setSessions(restoredSessions);
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Notice loading session history from session cache:', err);
+      }
+    }
+
     setLoading(true);
     setErrorStatus(null);
     let fetchedSessions: TestSession[] = [];
 
-    // 1. Fetch from Firestore if Firebase configurations are active and quota is available
+    // 3. Fetch from Firestore only when cache is empty or explicit sync requested
     const isKnownQuota = sessionStorage.getItem('firestore_quota_exceeded') === 'true';
     if (isFirebaseActive && db && userId && userId !== 'sandbox_guest_uid' && !isKnownQuota) {
       const path = 'test_sessions';
@@ -103,7 +149,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
         }
       }
     } else {
-      // 2. Pure Offline / Sandbox fallback mode
+      // Pure Offline / Sandbox fallback mode
       try {
         const localData = localStorage.getItem('local_test_sessions');
         if (localData) {
@@ -123,15 +169,48 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
     }
 
     setSessions(fetchedSessions);
+    try {
+      sessionStorage.setItem('cached_session_history', JSON.stringify({
+        timestamp: Date.now(),
+        data: fetchedSessions
+      }));
+    } catch {}
     setLoading(false);
   };
 
-  const fetchLoginHistory = async () => {
+  const fetchLoginHistory = async (forceCloud = false) => {
+    // 1. In-memory check: if data already in state and not forcing cloud sync, return immediately
+    if (!forceCloud && loginLogs.length > 0) {
+      return;
+    }
+
+    // 2. SessionStorage cache check: if cached within 10 minutes, restore from storage
+    if (!forceCloud) {
+      try {
+        const cachedRaw = sessionStorage.getItem('cached_login_history');
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw);
+          const ageMs = Date.now() - (cached.timestamp || 0);
+          if (ageMs < TEN_MINUTES_MS && Array.isArray(cached.data) && cached.data.length > 0) {
+            const restoredLogins = cached.data.map((l: any) => ({
+              ...l,
+              timestamp: new Date(l.timestamp)
+            }));
+            setLoginLogs(restoredLogins);
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Notice loading login history from session cache:', err);
+      }
+    }
+
     setLoading(true);
     setErrorStatus(null);
     let fetchedLogins: any[] = [];
 
-    // 1. Fetch from Firestore if Firebase active and quota available
+    // 3. Fetch from Firestore only when cache is empty or explicit sync requested
     const isKnownQuota = sessionStorage.getItem('firestore_quota_exceeded') === 'true';
     if (isFirebaseActive && db && userId && userId !== 'sandbox_guest_uid' && !isKnownQuota) {
       const path = 'login_history';
@@ -176,7 +255,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
         } catch {}
       }
     } else {
-      // 2. Local Fallback
+      // Local Fallback
       try {
         const localData = localStorage.getItem('local_login_history');
         if (localData) {
@@ -197,6 +276,12 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
     }
 
     setLoginLogs(fetchedLogins);
+    try {
+      sessionStorage.setItem('cached_login_history', JSON.stringify({
+        timestamp: Date.now(),
+        data: fetchedLogins
+      }));
+    } catch {}
     setLoading(false);
   };
 
@@ -229,7 +314,17 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
       console.warn('Failed deleting local log backup:', err);
     }
 
-    fetchSessionHistory();
+    // Update state and session cache directly without re-reading all documents from Firestore
+    setSessions(prev => {
+      const updated = prev.filter(s => s.id !== docId && s.timestamp !== timestampToDelete);
+      try {
+        sessionStorage.setItem('cached_session_history', JSON.stringify({
+          timestamp: Date.now(),
+          data: updated
+        }));
+      } catch {}
+      return updated;
+    });
   };
 
   const handleDeleteLoginLog = async (logId: string) => {
@@ -259,7 +354,17 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
       console.warn('Failed deleting local login log:', err);
     }
 
-    fetchLoginHistory();
+    // Update state and session cache directly without re-reading all documents from Firestore
+    setLoginLogs(prev => {
+      const updated = prev.filter(l => l.id !== logId);
+      try {
+        sessionStorage.setItem('cached_login_history', JSON.stringify({
+          timestamp: Date.now(),
+          data: updated
+        }));
+      } catch {}
+      return updated;
+    });
   };
 
   const toggleExpandSession = (index: number) => {
@@ -471,13 +576,20 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
           )}
 
           <button
-            onClick={(activeTab === 'typing' || activeTab === 'dashboard') ? fetchSessionHistory : fetchLoginHistory}
+            onClick={() => {
+              if (activeTab === 'typing' || activeTab === 'dashboard') {
+                fetchSessionHistory(true);
+              } else {
+                fetchLoginHistory(true);
+              }
+            }}
             disabled={loading}
-            aria-label="Reload Active Panel Logs"
-            className="p-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition disabled:opacity-50 border border-slate-200 cursor-pointer"
-            title="Reload Active Panel Logs"
+            aria-label="Force refresh active panel logs from Cloud"
+            className="p-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition disabled:opacity-50 border border-slate-200 cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
+            title="Force refresh logs from Cloud database"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-indigo-600 ${loading ? 'animate-spin' : ''}`} />
+            <span className="text-[10px] uppercase font-bold text-slate-600 hidden sm:inline">Sync Cloud</span>
           </button>
         </div>
       </div>

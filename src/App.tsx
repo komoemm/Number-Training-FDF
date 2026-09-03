@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { db, auth, isFirebaseActive, handleFirestoreError, OperationType } from './firebase';
+import { db, auth, isFirebaseActive, handleFirestoreError, OperationType, isQuotaError, getFirebaseConsoleUrl } from './firebase';
 import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { collection, doc, setDoc, getDocs, deleteDoc, serverTimestamp, query, where, orderBy, limit } from 'firebase/firestore';
 import { 
@@ -26,7 +26,8 @@ import { CategorySandbox } from './components/CategorySandbox';
 import { 
   Zap, Keyboard, ShieldAlert, CheckCircle2, ChevronRight, ChevronLeft,
   RotateCcw, LogOut, HelpCircle, Trophy, BarChart2, Check, X,
-  Clock, Database, Award, Download, Users, FileText, Calendar, Phone
+  Clock, Database, Award, Download, Users, FileText, Calendar, Phone,
+  Sparkles, ShieldCheck
 } from 'lucide-react';
 
 export default function App() {
@@ -34,6 +35,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [, setAuthLoading] = useState<boolean>(true);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState<boolean>(() => sessionStorage.getItem('firestore_quota_exceeded') === 'true');
 
   // Local Offline User States
   const [currentOfflineUser, setCurrentOfflineUser] = useState<any>(() => {
@@ -99,7 +101,7 @@ export default function App() {
     }
 
     // 2. Firestore cloud storage
-    if (isFirebaseActive && db) {
+    if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
       const pathCol = 'login_history';
       try {
         await setDoc(doc(db, pathCol, logId), {
@@ -107,7 +109,13 @@ export default function App() {
           timestamp: serverTimestamp()
         });
       } catch (err) {
-        console.error('Failed writing login log to Firestore:', err);
+        if (isQuotaError(err)) {
+          setIsQuotaExceeded(true);
+          sessionStorage.setItem('firestore_quota_exceeded', 'true');
+          console.warn('Firestore quota reached when recording login log. Saved locally.');
+        } else {
+          console.warn('Failed writing login log to Firestore:', err);
+        }
       }
     }
   };
@@ -166,11 +174,17 @@ export default function App() {
 
     setLocalUsers(prev => [...prev, newOperator]);
 
-    if (isFirebaseActive && db) {
+    if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
         await setDoc(doc(db, 'sandbox_users', usernameLower), newOperator);
       } catch (err) {
-        console.error('Failed to sync new trainee profile to cloud database:', err);
+        if (isQuotaError(err)) {
+          setIsQuotaExceeded(true);
+          sessionStorage.setItem('firestore_quota_exceeded', 'true');
+          console.warn('Firestore quota reached when syncing trainee profile. Saved locally.');
+        } else {
+          console.warn('Failed to sync new trainee profile to cloud database:', err);
+        }
       }
     }
 
@@ -252,7 +266,7 @@ export default function App() {
     setLocalUsers(prev => [...prev, ...createdUsers]);
 
     // 2. Sync to Firestore in parallel using Promise.all
-    if (isFirebaseActive && db) {
+    if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
         const promises = createdUsers.map(async (user) => {
           const uLower = user.username.toLowerCase();
@@ -260,8 +274,14 @@ export default function App() {
         });
         await Promise.all(promises);
       } catch (err) {
-        console.error('Failed to batch sync profiles to cloud database:', err);
-        setUserCreationError('Profiles written locally, but some failed cloud database synchronization.');
+        if (isQuotaError(err)) {
+          setIsQuotaExceeded(true);
+          sessionStorage.setItem('firestore_quota_exceeded', 'true');
+          console.warn('Firestore quota reached during batch sync. Saved locally.');
+        } else {
+          console.warn('Failed to batch sync profiles to cloud database:', err);
+          setUserCreationError('Profiles written locally, but some failed cloud database synchronization.');
+        }
       }
     }
 
@@ -287,11 +307,17 @@ export default function App() {
       const unameLower = uname.toLowerCase();
       setLocalUsers(prev => prev.filter(u => u.username.toLowerCase() !== unameLower));
       
-      if (isFirebaseActive && db) {
+      if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
         try {
           await deleteDoc(doc(db, 'sandbox_users', unameLower));
         } catch (err) {
-          console.error('Failed to delete profile from cloud database:', err);
+          if (isQuotaError(err)) {
+            setIsQuotaExceeded(true);
+            sessionStorage.setItem('firestore_quota_exceeded', 'true');
+            console.warn('Firestore quota reached when deleting trainee profile. Removed locally.');
+          } else {
+            console.warn('Failed to delete profile from cloud database:', err);
+          }
         }
       }
 
@@ -387,7 +413,7 @@ export default function App() {
         console.error('Error loading latest local session:', err);
       }
       
-      if (isFirebaseActive && db && activeUserId !== 'sandbox_guest_uid') {
+      if (isFirebaseActive && db && activeUserId !== 'sandbox_guest_uid' && !sessionStorage.getItem('firestore_quota_exceeded')) {
         try {
           const path = 'test_sessions';
           const queryRef = query(
@@ -434,7 +460,13 @@ export default function App() {
             return;
           }
         } catch (err) {
-          console.error('Failed reading latest session from Firestore:', err);
+          if (isQuotaError(err)) {
+            setIsQuotaExceeded(true);
+            sessionStorage.setItem('firestore_quota_exceeded', 'true');
+            console.warn('Firestore free daily read quota reached; using local session cache.');
+          } else {
+            console.warn('Notice reading latest session from Firestore:', err);
+          }
         }
       }
       
@@ -468,7 +500,7 @@ export default function App() {
   }, [currentOfflineUser, refreshTrigger]);
 
   const fetchSandboxUsers = async () => {
-    if (isFirebaseActive && db) {
+    if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
         const querySnapshot = await getDocs(collection(db, 'sandbox_users'));
         const users: any[] = [];
@@ -489,13 +521,19 @@ export default function App() {
           setLocalUsers(defaultUsers);
         }
       } catch (err) {
-        console.error('Failed to load sandbox users from Firestore:', err);
+        if (isQuotaError(err)) {
+          setIsQuotaExceeded(true);
+          sessionStorage.setItem('firestore_quota_exceeded', 'true');
+          console.warn('Firestore quota reached when fetching sandbox users. Continuing with local profiles.');
+        } else {
+          console.warn('Notice loading sandbox users from Firestore:', err);
+        }
       }
     }
   };
 
   const fetchCustomInvoices = async () => {
-    if (isFirebaseActive && db) {
+    if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
         const querySnapshot = await getDocs(collection(db, 'custom_invoices'));
         const invoices: any[] = [];
@@ -510,7 +548,13 @@ export default function App() {
           setCustomInvoices(invoices);
         }
       } catch (err) {
-        console.error('Failed to load custom invoices from Firestore:', err);
+        if (isQuotaError(err)) {
+          setIsQuotaExceeded(true);
+          sessionStorage.setItem('firestore_quota_exceeded', 'true');
+          console.warn('Firestore quota reached when fetching custom invoices. Using local invoice cache.');
+        } else {
+          console.warn('Notice loading custom invoices from Firestore:', err);
+        }
       }
     }
   };
@@ -766,13 +810,19 @@ export default function App() {
       console.warn('LocalStorage quota exceeded:', err);
     }
 
-    if (isFirebaseActive && db) {
+    if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
         for (const item of newItems) {
           await setDoc(doc(db, 'custom_invoices', item.id), item);
         }
       } catch (err) {
-        console.error('Failed to sync uploaded invoices to Firestore database:', err);
+        if (isQuotaError(err)) {
+          setIsQuotaExceeded(true);
+          sessionStorage.setItem('firestore_quota_exceeded', 'true');
+          console.warn('Firestore quota reached when syncing uploaded invoices. Saved locally.');
+        } else {
+          console.warn('Failed to sync uploaded invoices to Firestore database:', err);
+        }
       }
     }
 
@@ -791,11 +841,17 @@ export default function App() {
     setCustomInvoices(updated);
     localStorage.setItem('custom_uploaded_invoices', JSON.stringify(updated));
 
-    if (isFirebaseActive && db) {
+    if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
         await setDoc(doc(db, 'custom_invoices', newCustom.id), newCustom);
       } catch (err) {
-        console.error('Failed to sync sample invoice to Firestore database:', err);
+        if (isQuotaError(err)) {
+          setIsQuotaExceeded(true);
+          sessionStorage.setItem('firestore_quota_exceeded', 'true');
+          console.warn('Firestore quota reached when syncing sample invoice. Saved locally.');
+        } else {
+          console.warn('Failed to sync sample invoice to Firestore database:', err);
+        }
       }
     }
   };
@@ -808,7 +864,7 @@ export default function App() {
     setCustomInvoices(updated);
     localStorage.setItem('custom_uploaded_invoices', JSON.stringify(updated));
 
-    if (isFirebaseActive && db) {
+    if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
         const snap = await getDocs(collection(db, 'custom_invoices'));
         for (const docSnap of snap.docs) {
@@ -818,7 +874,13 @@ export default function App() {
           }
         }
       } catch (err) {
-        console.error('Failed to clear custom invoices from Firestore:', err);
+        if (isQuotaError(err)) {
+          setIsQuotaExceeded(true);
+          sessionStorage.setItem('firestore_quota_exceeded', 'true');
+          console.warn('Firestore quota reached when clearing pool in cloud. Cleared locally.');
+        } else {
+          console.warn('Failed to clear custom invoices from Firestore:', err);
+        }
       }
     }
   };
@@ -831,11 +893,17 @@ export default function App() {
     setCustomInvoices(updated);
     localStorage.setItem('custom_uploaded_invoices', JSON.stringify(updated));
 
-    if (isFirebaseActive && db) {
+    if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
         await deleteDoc(doc(db, 'custom_invoices', id));
       } catch (err) {
-        console.error('Failed to delete custom invoice from Firestore:', err);
+        if (isQuotaError(err)) {
+          setIsQuotaExceeded(true);
+          sessionStorage.setItem('firestore_quota_exceeded', 'true');
+          console.warn('Firestore quota reached when deleting invoice from cloud. Removed locally.');
+        } else {
+          console.warn('Failed to delete custom invoice from Firestore:', err);
+        }
       }
     }
   };
@@ -857,11 +925,17 @@ export default function App() {
     } catch {}
 
     const matched = updated.find(inv => inv.id === id);
-    if (isFirebaseActive && db && matched) {
+    if (isFirebaseActive && db && matched && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
         await setDoc(doc(db, 'custom_invoices', id), matched);
       } catch (err) {
-        console.error('Failed to update expected number in Firestore:', err);
+        if (isQuotaError(err)) {
+          setIsQuotaExceeded(true);
+          sessionStorage.setItem('firestore_quota_exceeded', 'true');
+          console.warn('Firestore quota reached when updating custom invoice code. Saved locally.');
+        } else {
+          console.warn('Failed to update expected number in Firestore:', err);
+        }
       }
     }
   };
@@ -882,11 +956,17 @@ export default function App() {
     } catch {}
 
     const matched = updated.find(inv => inv.id === id);
-    if (isFirebaseActive && db && matched) {
+    if (isFirebaseActive && db && matched && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
         await setDoc(doc(db, 'custom_invoices', id), matched);
       } catch (err) {
-        console.error('Failed to update company name in Firestore:', err);
+        if (isQuotaError(err)) {
+          setIsQuotaExceeded(true);
+          sessionStorage.setItem('firestore_quota_exceeded', 'true');
+          console.warn('Firestore quota reached when updating custom invoice company. Saved locally.');
+        } else {
+          console.warn('Failed to update company name in Firestore:', err);
+        }
       }
     }
   };
@@ -1071,7 +1151,7 @@ export default function App() {
     }
 
     // 2. Upload to Firestore
-    if (isFirebaseActive && db && currentOfflineUser && activeUserId !== 'sandbox_guest_uid') {
+    if (isFirebaseActive && db && currentOfflineUser && activeUserId !== 'sandbox_guest_uid' && !sessionStorage.getItem('firestore_quota_exceeded')) {
       const pathCollection = 'test_sessions';
       const newSessionDocId = `session_${now.getTime()}`;
 
@@ -1082,11 +1162,18 @@ export default function App() {
         };
         await setDoc(doc(db, pathCollection, newSessionDocId), cloudPayload);
       } catch (err) {
-        try {
-          handleFirestoreError(err, OperationType.CREATE, `${pathCollection}/${newSessionDocId}`);
-        } catch (wrappedErr: any) {
-          setSaveError('Cloud sync blocked. Logs retained in local history fallback.');
-          console.error('Wrapped Firestore error:', wrappedErr.message);
+        if (isQuotaError(err)) {
+          setIsQuotaExceeded(true);
+          sessionStorage.setItem('firestore_quota_exceeded', 'true');
+          setSaveError('Cloud sync paused (Firestore daily quota reached). Result safely saved in local offline history.');
+          console.warn('Firestore write quota exceeded; saved to local storage.');
+        } else {
+          try {
+            handleFirestoreError(err, OperationType.CREATE, `${pathCollection}/${newSessionDocId}`);
+          } catch (wrappedErr: any) {
+            setSaveError('Cloud sync blocked. Logs retained in local history fallback.');
+            console.warn('Wrapped Firestore error:', wrappedErr.message);
+          }
         }
       }
     }
@@ -1200,8 +1287,8 @@ export default function App() {
 
           <div className="hidden sm:flex flex-col items-end leading-none">
             <span className="text-slate-400 uppercase tracking-tighter text-[9px] font-bold">System Status</span>
-            <span className="font-medium mt-1 flex items-center gap-1 text-emerald-400 font-mono">
-              ● Online.Secure
+            <span className={`font-medium mt-1 flex items-center gap-1 font-mono ${isQuotaExceeded ? 'text-amber-400' : 'text-emerald-400'}`}>
+              {isQuotaExceeded ? '● Offline.Local' : '● Online.Secure'}
             </span>
           </div>
 
@@ -1218,6 +1305,39 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {/* Firestore Free Tier Quota Exceeded Notification Banner */}
+      {isQuotaExceeded && (
+        <aside aria-label="Firestore Quota Limit" className="bg-amber-50 border-b border-amber-200 text-amber-950 px-4 py-2.5 text-xs flex items-center justify-between flex-wrap gap-2 shadow-xs" id="quota-warning-banner">
+          <div className="flex items-center gap-2">
+            <span className="bg-amber-500 text-white rounded-full w-4 h-4 flex items-center justify-center font-bold text-[10px] shrink-0">!</span>
+            <span className="leading-snug">
+              <strong>Firestore Free Daily Read Quota Reached:</strong> The app is seamlessly operating in Local Offline Storage mode. All test sessions, speed benchmarks, and custom invoices are safely saved on this device. Free daily quota resets every 24 hours.
+            </span>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <a
+              href={getFirebaseConsoleUrl()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-bold text-amber-800 underline hover:text-amber-950 flex items-center gap-1 text-xs"
+            >
+              Firebase Console ↗
+            </a>
+            <button
+              onClick={() => {
+                sessionStorage.removeItem('firestore_quota_exceeded');
+                setIsQuotaExceeded(false);
+                setRefreshTrigger(prev => prev + 1);
+              }}
+              className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 text-amber-950 rounded font-semibold text-[11px] cursor-pointer transition border border-amber-300"
+              title="Retry connection to Firestore"
+            >
+              Retry Cloud Sync
+            </button>
+          </div>
+        </aside>
+      )}
 
       {/* 2. Main Workstation Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
@@ -1519,7 +1639,7 @@ export default function App() {
             </div>
 
             {/* Workplace Context parameters / Trainee Card */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between shadow-sm animate-fade-in">
+            <div id="workplace-context" className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between shadow-sm animate-fade-in">
               <div className="space-y-4">
                 {/* Trainee Last Result Card */}
                 <div className="border-b border-slate-150 pb-5 mb-1">
@@ -1587,48 +1707,66 @@ export default function App() {
                   )}
                 </div>
 
-                <div className="flex items-center space-x-2 text-indigo-600">
-                  <Database className="w-4 h-4" />
-                  <span className="text-xs font-bold uppercase tracking-widest">Storage & Analytics</span>
-                </div>
-                
-                <h3 className="font-bold text-slate-700">System Integration Checklist</h3>
-                
-                <div className="space-y-3.5 text-xs text-slate-500 leading-relaxed">
-                  <div className="flex items-start space-x-2">
-                    <span className="text-emerald-600 font-bold">✓</span>
-                    <span>Multi-category 3-track training engine initialized</span>
+                {/* Target Speed Standard Widget */}
+                <div className="space-y-3">
+                  <div className="bg-gradient-to-br from-indigo-50/70 to-slate-50 border border-indigo-150 rounded-xl p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 text-indigo-600 fill-indigo-600" />
+                        Target Speed Standard
+                      </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 font-mono">
+                        Level A: {CATEGORY_SLA_CONFIG[activeTrainingCategory]?.levels.A.rangeShort || 'Under 3.0s'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-1 text-center font-mono">
+                      <div className="bg-white p-1.5 rounded border border-slate-200">
+                        <span className="text-[10px] font-bold text-emerald-700 block">Lvl A</span>
+                        <span className="text-[9px] text-slate-500">{CATEGORY_SLA_CONFIG[activeTrainingCategory]?.levels.A.rangeShort}</span>
+                      </div>
+                      <div className="bg-white p-1.5 rounded border border-slate-200">
+                        <span className="text-[10px] font-bold text-indigo-700 block">Lvl B</span>
+                        <span className="text-[9px] text-slate-500">{CATEGORY_SLA_CONFIG[activeTrainingCategory]?.levels.B.rangeShort}</span>
+                      </div>
+                      <div className="bg-white p-1.5 rounded border border-slate-200">
+                        <span className="text-[10px] font-bold text-amber-700 block">Lvl C</span>
+                        <span className="text-[9px] text-slate-500">{CATEGORY_SLA_CONFIG[activeTrainingCategory]?.levels.C.rangeShort}</span>
+                      </div>
+                      <div className="bg-white p-1.5 rounded border border-slate-200">
+                        <span className="text-[10px] font-bold text-rose-700 block">Lvl D</span>
+                        <span className="text-[9px] text-slate-500">{CATEGORY_SLA_CONFIG[activeTrainingCategory]?.levels.D.rangeShort}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-start space-x-2">
-                    {isFirebaseActive ? (
-                      <span className="text-emerald-500 font-bold">✓</span>
-                    ) : (
-                      <span className="text-amber-500 font-bold">!</span>
-                    )}
-                    <span>
-                      {isFirebaseActive 
-                        ? 'Cloud database bound and actively writing to Firestore' 
-                        : 'Credentials waiting: client operating under dynamic LocalStorage Sandbox'}
-                    </span>
-                  </div>
-                  <div className="flex items-start space-x-2">
-                    {currentUser ? (
-                      <span className="text-emerald-500 font-bold">✓</span>
-                    ) : (
-                      <span className="text-slate-400 font-bold">○</span>
-                    )}
-                    <span>{currentUser ? `Authorized as employee: ${currentUser.displayName}` : 'Active user: Anonymous Practitioner'}</span>
+
+                  {/* Speed & Precision Tips */}
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center gap-1.5 text-slate-700 font-bold">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Speed & Precision Tips</span>
+                    </div>
+                    <ul className="space-y-1.5 text-[11px] text-slate-500 leading-normal">
+                      <li className="flex items-start gap-1.5">
+                        <span className="text-indigo-600 font-bold shrink-0">⌨️</span>
+                        <span>Anchor index finger on the <strong>Tenkey Numpad (4-5-6)</strong> home row for rapid blind entry.</span>
+                      </li>
+                      <li className="flex items-start gap-1.5">
+                        <span className="text-emerald-600 font-bold shrink-0">⚡</span>
+                        <span><strong>Zero Enter Key:</strong> Auto-advance submits automatically upon typing target length.</span>
+                      </li>
+                      <li className="flex items-start gap-1.5">
+                        <span className="text-pink-600 font-bold shrink-0">🎯</span>
+                        <span>Scan the receipt text before placing fingers to minimize visual recognition latency.</span>
+                      </li>
+                    </ul>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-6 bg-slate-50 p-4 rounded-xl border border-slate-150 text-slate-500 text-xs space-y-2">
-                <p className="font-bold text-slate-700 flex items-center gap-1.5">
-                  <HelpCircle className="w-3.5 h-3.5 text-indigo-600" /> Multi-Category Benchmark
-                </p>
-                <p className="text-[11px] leading-relaxed">
-                  Select between <strong>Tax Registration Numbers</strong> (T+13 digits), <strong>Issue Dates</strong> (YYYYMMDD), and <strong>Contact Phone Numbers</strong> (10-11 digits) using the top tabs.
-                </p>
+              <div className="mt-5 bg-slate-50 p-3 rounded-xl border border-slate-150 text-slate-500 text-[11px] flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span>Standard SLA requires <strong>≥ 95% accuracy</strong> and <strong>Level C or better</strong> to qualify.</span>
               </div>
             </div>
           </div>

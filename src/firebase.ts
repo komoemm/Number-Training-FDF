@@ -63,6 +63,32 @@ if (isFirebaseActive) {
 }
 
 /**
+ * Checks whether an error is caused by Firestore free daily usage quota exhaustion.
+ */
+export function isQuotaError(error: unknown): boolean {
+  if (!error) return false;
+  const msg = error instanceof Error ? error.message : String(error);
+  const code = (error as any)?.code || '';
+  return (
+    code === 'resource-exhausted' ||
+    msg.toLowerCase().includes('quota limit exceeded') ||
+    msg.toLowerCase().includes('quota exceeded') ||
+    msg.toLowerCase().includes('free daily read units') ||
+    msg.toLowerCase().includes('resource-exhausted') ||
+    msg.toLowerCase().includes('resource_exhausted')
+  );
+}
+
+/**
+ * Returns direct Firebase Console upgrade and quota link for this database
+ */
+export function getFirebaseConsoleUrl(): string {
+  const proj = firebaseConfig?.projectId || 'gen-lang-client-0170355455';
+  const dbId = firebaseConfig?.firestoreDatabaseId || 'ai-studio-e45718ef-759f-4c84-bd62-e8012bf50357';
+  return `https://console.firebase.google.com/project/${proj}/firestore/databases/${dbId}/data?openUpgradeDialog=true`;
+}
+
+/**
  * Handles Firestore errors by wrapping them in a standardized, stringified JSON format
  * as mandated by the project security and telemetry instructions.
  */
@@ -91,7 +117,11 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path
   };
 
-  console.error('Firestore standard telemetry exception: ', JSON.stringify(errInfo));
+  if (isQuotaError(error)) {
+    console.warn('Firestore free daily quota threshold reached. Switching to offline storage mode.');
+  } else {
+    console.error('Firestore standard telemetry exception: ', JSON.stringify(errInfo));
+  }
   throw new Error(JSON.stringify(errInfo));
 }
 

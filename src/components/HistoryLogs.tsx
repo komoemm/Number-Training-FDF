@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, limit, getDocs, doc, deleteDoc } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType, isFirebaseActive } from '../firebase';
+import { db, handleFirestoreError, OperationType, isFirebaseActive, isQuotaError } from '../firebase';
 import { Clock, RefreshCw, Layers, Database, ChevronDown, ChevronUp, CheckCircle, XCircle, Trash2, Filter, Key, ShieldAlert, Trophy, Award, TrendingUp, Download } from 'lucide-react';
 import { TestSession, TypingDetail, TrainingCategory } from '../types';
 import { generateCertificatePDF } from '../utils/pdfGenerator';
@@ -47,8 +47,9 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
     setErrorStatus(null);
     let fetchedSessions: TestSession[] = [];
 
-    // 1. Fetch from Firestore if Firebase configurations are active
-    if (isFirebaseActive && db && userId && userId !== 'sandbox_guest_uid') {
+    // 1. Fetch from Firestore if Firebase configurations are active and quota is available
+    const isKnownQuota = sessionStorage.getItem('firestore_quota_exceeded') === 'true';
+    if (isFirebaseActive && db && userId && userId !== 'sandbox_guest_uid' && !isKnownQuota) {
       const path = 'test_sessions';
       try {
         // ALWAYS fetch all trainee records up to 150 for aggregated levels statistics and leaderboard standings
@@ -84,7 +85,14 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
           });
         });
       } catch (err) {
-        console.warn('Unable to load from cloud. Retrying local cache fallback...', err);
+        if (isQuotaError(err)) {
+          sessionStorage.setItem('firestore_quota_exceeded', 'true');
+          console.warn('Firestore daily read quota reached; using local session cache.');
+          setErrorStatus('Displaying cached offline entries (Firestore free daily read quota reached).');
+        } else {
+          console.warn('Unable to load from cloud. Retrying local cache fallback...', err);
+          setErrorStatus('Displaying cached offline entries only.');
+        }
         try {
           const localData = localStorage.getItem('local_test_sessions');
           if (localData) {
@@ -93,7 +101,6 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
         } catch {
           // ignore fallback err
         }
-        setErrorStatus('Displaying cached offline entries only.');
       }
     } else {
       // 2. Pure Offline / Sandbox fallback mode
@@ -111,7 +118,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
           }));
         }
       } catch (err) {
-        console.error('Failed to query local speed session results:', err);
+        console.warn('Failed to query local speed session results:', err);
       }
     }
 
@@ -124,8 +131,9 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
     setErrorStatus(null);
     let fetchedLogins: any[] = [];
 
-    // 1. Fetch from Firestore if Firebase active
-    if (isFirebaseActive && db && userId && userId !== 'sandbox_guest_uid') {
+    // 1. Fetch from Firestore if Firebase active and quota available
+    const isKnownQuota = sessionStorage.getItem('firestore_quota_exceeded') === 'true';
+    if (isFirebaseActive && db && userId && userId !== 'sandbox_guest_uid' && !isKnownQuota) {
       const path = 'login_history';
       try {
         const queryRef = isAdmin
@@ -154,7 +162,12 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
           });
         });
       } catch (err) {
-        console.warn('Unable to load login history from cloud. Fallback to local storage...', err);
+        if (isQuotaError(err)) {
+          sessionStorage.setItem('firestore_quota_exceeded', 'true');
+          console.warn('Firestore daily read quota reached; using local login history.');
+        } else {
+          console.warn('Unable to load login history from cloud. Fallback to local storage...', err);
+        }
         try {
           const localData = localStorage.getItem('local_login_history');
           if (localData) {
@@ -174,7 +187,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
           }));
         }
       } catch (err) {
-        console.error('Failed to query local login history:', err);
+        console.warn('Failed to query local login history:', err);
       }
     }
 
@@ -190,12 +203,17 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
   const handleDeleteSession = async (timestampToDelete: any, docId?: string) => {
     if (!isAdmin) return;
     
-    // Delete from Firestore if docId exists
-    if (isFirebaseActive && db && docId) {
+    // Delete from Firestore if docId exists and quota not known to be exceeded
+    if (isFirebaseActive && db && docId && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
         await deleteDoc(doc(db, 'test_sessions', docId));
       } catch (err) {
-        console.error('Failed to delete performance record from cloud database:', err);
+        if (isQuotaError(err)) {
+          sessionStorage.setItem('firestore_quota_exceeded', 'true');
+          console.warn('Firestore quota exceeded while deleting session. Removed locally.');
+        } else {
+          console.warn('Failed to delete performance record from cloud database:', err);
+        }
       }
     }
 
@@ -208,7 +226,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
         localStorage.setItem('local_test_sessions', JSON.stringify(filtered));
       }
     } catch (err) {
-      console.error('Failed deleting local log backup:', err);
+      console.warn('Failed deleting local log backup:', err);
     }
 
     fetchSessionHistory();
@@ -217,11 +235,16 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
   const handleDeleteLoginLog = async (logId: string) => {
     if (!isAdmin) return;
 
-    if (isFirebaseActive && db) {
+    if (isFirebaseActive && db && !sessionStorage.getItem('firestore_quota_exceeded')) {
       try {
         await deleteDoc(doc(db, 'login_history', logId));
       } catch (err) {
-        console.error('Failed to delete login log from cloud:', err);
+        if (isQuotaError(err)) {
+          sessionStorage.setItem('firestore_quota_exceeded', 'true');
+          console.warn('Firestore quota exceeded while deleting login log. Removed locally.');
+        } else {
+          console.warn('Failed to delete login log from cloud:', err);
+        }
       }
     }
 
@@ -233,7 +256,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
         localStorage.setItem('local_login_history', JSON.stringify(filtered));
       }
     } catch (err) {
-      console.error('Failed deleting local login log:', err);
+      console.warn('Failed deleting local login log:', err);
     }
 
     fetchLoginHistory();

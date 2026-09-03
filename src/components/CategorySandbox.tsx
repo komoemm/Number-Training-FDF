@@ -89,22 +89,22 @@ export const CategorySandbox: React.FC<CategorySandboxProps> = ({
       subtitle: 'Transcribe 8-digit Japanese Invoice Transaction Dates (YYYYMMDD) from receipt images.',
       inputRule: 'Enter 8 numeric digits in YYYYMMDD format (e.g. 20260522 for 2026年5月22日).',
       autoAdvance: 'Auto-advances immediately upon reaching exactly 8 numeric digits.',
-      slaTarget: 'Target speed is under 4.00 seconds per invoice with ≥ 95% accuracy.',
+      slaTarget: 'Target speed is under 3.50 seconds per invoice with ≥ 95% accuracy.',
       codePlaceholder: '20260522',
       codeLabel: '8-Digit Date (YYYYMMDD)',
       extractHint: 'Filename auto-detects 8-digit dates (e.g. receipt_20260522.jpg)',
-      slaLimit: '4.00s'
+      slaLimit: '3.50s'
     },
     phone_number: {
       title: '📞 Phone Number Data Entry (電話番号 / TEL)',
       subtitle: 'Transcribe Japanese Contact Telephone Numbers (10 to 11 digits) from receipt images.',
       inputRule: 'Enter numeric digits only (e.g. 0312345678 or 09012345678). Hyphens are automatically stripped.',
       autoAdvance: 'Auto-advances immediately upon matching the expected telephone digit length (10 or 11 digits).',
-      slaTarget: 'Target speed is under 5.00 seconds per invoice with ≥ 95% accuracy.',
+      slaTarget: 'Target speed is under 4.50 seconds per invoice with ≥ 95% accuracy.',
       codePlaceholder: '0312345678',
       codeLabel: 'Phone Number (10-11 digits)',
       extractHint: 'Filename auto-detects telephone sequences (e.g. receipt_0312345678.jpg)',
-      slaLimit: '5.00s'
+      slaLimit: '4.50s'
     }
   }[category];
 

@@ -49,8 +49,10 @@ export default function StatsPanel({
     ? '📞 Phone Number' 
     : '🧾 Tax Number';
 
-  const slaTargetSec = category === 'date_number' ? '1.30s' : category === 'phone_number' ? '2.50s' : '3.00s';
-  const slaTargetMs = category === 'date_number' ? 1300 : category === 'phone_number' ? 2500 : 3000;
+  const catConfig = CATEGORY_SLA_CONFIG[category] || CATEGORY_SLA_CONFIG.tax_number;
+  const slaTargetSec = (catConfig.levels.A.maxMs / 1000).toFixed(2) + 's';
+  const slaTargetMs = catConfig.levels.A.maxMs;
+  const slaLimitSec = catConfig.slaLimitSec;
 
   // Meter ratios
   const progressRatio = isTestActive ? Math.round(((currentIndex) / totalCount) * 100) : 100;
@@ -116,7 +118,7 @@ export default function StatsPanel({
         {/* 2. Precision Timer */}
         <div className="bg-white border border-slate-200 rounded-2xl p-5 flex items-center space-x-3.5 shadow-sm transition">
           <div className={`p-3 rounded-xl transition-colors ${
-            parseFloat(currentElapsedSec) > 6.0 && isTestActive ? 'bg-amber-50 text-amber-600 animate-pulse' : 'bg-indigo-50 text-indigo-600'
+            parseFloat(currentElapsedSec) > slaLimitSec && isTestActive ? 'bg-amber-50 text-amber-600 animate-pulse' : 'bg-indigo-50 text-indigo-600'
           }`}>
             <Clock className="w-5 h-5" />
           </div>
@@ -125,18 +127,18 @@ export default function StatsPanel({
               Active Scan Clock
             </span>
             <span className={`block text-2xl font-bold mt-1 font-mono transition-colors ${
-              parseFloat(currentElapsedSec) > 6.0 && isTestActive ? 'text-amber-600' : 'text-slate-800'
+              parseFloat(currentElapsedSec) > slaLimitSec && isTestActive ? 'text-amber-600' : 'text-slate-800'
             }`}>
               {isTestActive ? `${currentElapsedSec}s` : '0.00s'}
             </span>
             {/* Visual Gauge */}
             <div className="mt-2 h-1 w-full bg-slate-100 overflow-hidden rounded">
                <div className={`h-full transition-all duration-100 ${
-                 parseFloat(currentElapsedSec) > 6.0 ? 'bg-amber-500' : 'bg-indigo-500'
+                 parseFloat(currentElapsedSec) > slaLimitSec ? 'bg-amber-500' : 'bg-indigo-500'
                }`} style={{ width: `${clockRatio}%` }}></div>
             </div>
-            <span className={`text-[10px] block mt-1 truncate ${parseFloat(currentElapsedSec) > 6.0 ? 'text-amber-600 font-bold' : 'text-slate-400'}`}>
-              {parseFloat(currentElapsedSec) > 6.0 ? 'Exceeds SLA targets' : 'Target: < 6.00s'}
+            <span className={`text-[10px] block mt-1 truncate ${parseFloat(currentElapsedSec) > slaLimitSec ? 'text-amber-600 font-bold' : 'text-slate-400'}`}>
+              {parseFloat(currentElapsedSec) > slaLimitSec ? 'Exceeds SLA targets' : `Target: < ${catConfig.slaLimit}`}
             </span>
           </div>
         </div>

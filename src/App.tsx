@@ -355,6 +355,14 @@ export default function App() {
   // Setup tabs selection: 3 Training Categories + Admin Users Management
   const [activeSetupTab, setActiveSetupTab] = useState<'tax_number' | 'date_number' | 'phone_number' | 'users'>('tax_number');
   const [activeTrainingCategory, setActiveTrainingCategory] = useState<TrainingCategory>('tax_number');
+
+  const handleSelectSetupTab = (tab: 'tax_number' | 'date_number' | 'phone_number' | 'users') => {
+    setActiveSetupTab(tab);
+    setUploadProgressError(null);
+    if (tab === 'tax_number' || tab === 'date_number' || tab === 'phone_number') {
+      setActiveTrainingCategory(tab);
+    }
+  };
   
   // Custom invoices uploaded from local system (multi-category support)
   const [customInvoices, setCustomInvoices] = useState<(GeneratedInvoiceData & { customImageUrl?: string })[]>(() => {
@@ -1536,7 +1544,7 @@ export default function App() {
                 {/* Dynamic Configuration Navigation Tabs (3 Training Categories + Admin Users) */}
                 <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 font-sans mb-4" role="tablist" aria-label="Workstation setup categories">
                   <button
-                    onClick={() => { setActiveSetupTab('tax_number'); setUploadProgressError(null); }}
+                    onClick={() => handleSelectSetupTab('tax_number')}
                     role="tab"
                     aria-selected={activeSetupTab === 'tax_number'}
                     aria-label="Tax Number Training"
@@ -1551,7 +1559,7 @@ export default function App() {
                   </button>
 
                   <button
-                    onClick={() => { setActiveSetupTab('date_number'); setUploadProgressError(null); }}
+                    onClick={() => handleSelectSetupTab('date_number')}
                     role="tab"
                     aria-selected={activeSetupTab === 'date_number'}
                     aria-label="Date Number Training"
@@ -1566,7 +1574,7 @@ export default function App() {
                   </button>
 
                   <button
-                    onClick={() => { setActiveSetupTab('phone_number'); setUploadProgressError(null); }}
+                    onClick={() => handleSelectSetupTab('phone_number')}
                     role="tab"
                     aria-selected={activeSetupTab === 'phone_number'}
                     aria-label="Phone Number Training"
@@ -1582,7 +1590,7 @@ export default function App() {
 
                   {currentOfflineUser?.role === 'admin' && (
                     <button
-                      onClick={() => { setActiveSetupTab('users'); setUploadProgressError(null); }}
+                      onClick={() => handleSelectSetupTab('users')}
                       role="tab"
                       aria-selected={activeSetupTab === 'users'}
                       aria-label="Trainee User Accounts"
@@ -1886,32 +1894,32 @@ export default function App() {
                 {/* Target Speed Standard Widget */}
                 <div className="space-y-3">
                   <div className="bg-gradient-to-br from-indigo-50/70 to-slate-50 border border-indigo-150 rounded-xl p-3.5 space-y-2.5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between flex-wrap gap-1.5">
                       <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         <Zap className="w-3.5 h-3.5 text-indigo-600 fill-indigo-600" />
                         Target Speed Standard
                       </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 font-mono">
-                        Level A: {CATEGORY_SLA_CONFIG[activeTrainingCategory]?.levels.A.rangeShort || 'Under 3.0s'}
+                      <span className="text-[11px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-0.5 rounded-full shrink-0">
+                        SLA Standard: &lt; {CATEGORY_SLA_CONFIG[activeTrainingCategory]?.slaLimit || '6.00s'}
                       </span>
                     </div>
 
                     <div className="grid grid-cols-4 gap-1 text-center font-mono">
                       <div className="bg-white p-1.5 rounded border border-slate-200">
                         <span className="text-[10px] font-bold text-emerald-700 block">Lvl A</span>
-                        <span className="text-[9px] text-slate-500">{CATEGORY_SLA_CONFIG[activeTrainingCategory]?.levels.A.rangeShort}</span>
+                        <span className="text-[9px] text-slate-500 font-bold">{CATEGORY_SLA_CONFIG[activeTrainingCategory]?.levels.A.rangeShort}</span>
                       </div>
                       <div className="bg-white p-1.5 rounded border border-slate-200">
                         <span className="text-[10px] font-bold text-indigo-700 block">Lvl B</span>
-                        <span className="text-[9px] text-slate-500">{CATEGORY_SLA_CONFIG[activeTrainingCategory]?.levels.B.rangeShort}</span>
+                        <span className="text-[9px] text-slate-500 font-bold">{CATEGORY_SLA_CONFIG[activeTrainingCategory]?.levels.B.rangeShort}</span>
                       </div>
                       <div className="bg-white p-1.5 rounded border border-slate-200">
                         <span className="text-[10px] font-bold text-amber-700 block">Lvl C</span>
-                        <span className="text-[9px] text-slate-500">{CATEGORY_SLA_CONFIG[activeTrainingCategory]?.levels.C.rangeShort}</span>
+                        <span className="text-[9px] text-slate-500 font-bold">{CATEGORY_SLA_CONFIG[activeTrainingCategory]?.levels.C.rangeShort}</span>
                       </div>
                       <div className="bg-white p-1.5 rounded border border-slate-200">
                         <span className="text-[10px] font-bold text-rose-700 block">Lvl D</span>
-                        <span className="text-[9px] text-slate-500">{CATEGORY_SLA_CONFIG[activeTrainingCategory]?.levels.D.rangeShort}</span>
+                        <span className="text-[9px] text-slate-500 font-bold">{CATEGORY_SLA_CONFIG[activeTrainingCategory]?.levels.D.rangeShort}</span>
                       </div>
                     </div>
                   </div>
@@ -1940,9 +1948,14 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="mt-5 bg-slate-50 p-3 rounded-xl border border-slate-150 text-slate-500 text-[11px] flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
-                <span>Standard SLA requires <strong>≥ 95% accuracy</strong> and <strong>Level C or better</strong> to qualify.</span>
+              <div className="mt-5 bg-slate-50 p-3 rounded-xl border border-slate-150 text-slate-600 text-[11px] flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span>Standard SLA requires <strong>≥ 95% accuracy</strong> and <strong>Level C or better</strong> to qualify.</span>
+                </div>
+                <span className="text-[11px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-0.5 rounded-full shrink-0">
+                  SLA Standard: &lt; {CATEGORY_SLA_CONFIG[activeTrainingCategory]?.slaLimit || '6.00s'}
+                </span>
               </div>
             </div>
           </div>
@@ -2170,7 +2183,7 @@ export default function App() {
                 <Trophy className="w-96 h-96" />
               </div>
 
-              <div className="relative z-10 flex flex-col md:flex-row gap-8 items-center justify-between">
+              <div className="relative z-10 flex flex-col xl:flex-row gap-6 items-start xl:items-center justify-between">
                 <div className="space-y-4 text-center md:text-left">
                   <div className="flex items-center justify-center md:justify-start gap-3">
                     <div className="p-3 bg-amber-50 text-amber-600 rounded-2xl border border-amber-200">
@@ -2223,24 +2236,24 @@ export default function App() {
                   )}
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+                <div className="flex flex-wrap lg:flex-nowrap gap-2.5 items-center w-full md:w-auto">
                   <button
                     onClick={handleDownloadPDF}
-                    className="px-5 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-md cursor-pointer text-sm uppercase tracking-wider shrink-0"
+                    className="px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-md cursor-pointer text-sm uppercase tracking-wider whitespace-nowrap shrink-0"
                   >
                     <Download className="w-4 h-4" />
                     <span>Download PDF Result</span>
                   </button>
                   <button
                     onClick={handleDownloadHTML}
-                    className="px-5 py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-md cursor-pointer text-sm uppercase tracking-wider shrink-0"
+                    className="px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-md cursor-pointer text-sm uppercase tracking-wider whitespace-nowrap shrink-0"
                   >
                     <Download className="w-4 h-4" />
                     <span>Download HTML Result</span>
                   </button>
                   <button
                     onClick={handleRunAgain}
-                    className="px-5 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-sm cursor-pointer text-sm uppercase tracking-wider"
+                    className="px-4 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-sm cursor-pointer text-sm uppercase tracking-wider whitespace-nowrap shrink-0"
                     id="btn-run-again"
                   >
                     <RotateCcw className="w-4 h-4" />
@@ -2251,9 +2264,9 @@ export default function App() {
                       setTestComplete(false);
                       setIsTestActive(false);
                     }}
-                    className="px-5 py-3.5 bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-bold transition flex items-center justify-center border border-slate-200 gap-1.5 cursor-pointer text-sm font-sans"
+                    className="px-4 py-3 bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-bold transition flex items-center justify-center border border-slate-200 gap-1.5 cursor-pointer text-sm font-sans whitespace-nowrap shrink-0"
                   >
-                    <span>Return to Configuration</span>
+                    <span>Return Home / Console</span>
                   </button>
                 </div>
               </div>

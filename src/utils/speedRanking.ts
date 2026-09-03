@@ -21,6 +21,9 @@ export interface CategorySLAMatrix {
   category: TrainingCategory;
   categoryLabel: string;
   categoryCode: string; // Rg, Ph, DATE
+  slaLimit: string;     // e.g. "< 6.00s", "< 3.50s", "< 4.50s"
+  slaLimitSec: number;  // e.g. 6.0, 3.5, 4.5
+  slaLimitMs: number;   // e.g. 6000, 3500, 4500
   levels: {
     A: SLALevelConfig;
     B: SLALevelConfig;
@@ -32,28 +35,34 @@ export interface CategorySLAMatrix {
 /**
  * Category-Tailored SLA Matrix
  * - Tax Number (Rg):
- *   Level A: <= 3.0s ("Under 3.00 seconds")
- *   Level B: 3.01s ~ 3.3s ("3.1 ~ 3.3 seconds")
- *   Level C: 3.31s ~ 3.7s ("3.4 ~ 3.7 seconds")
- *   Level D: > 3.7s ("3.8 ~ 4.0+ seconds")
- *
- * - Phone Number (Ph):
- *   Level A: <= 2.5s ("Under 2.50 seconds")
- *   Level B: 2.51s ~ 2.8s ("2.6 ~ 2.8 seconds")
- *   Level C: 2.81s ~ 3.2s ("2.9 ~ 3.2 seconds")
- *   Level D: > 3.2s ("3.3 ~ 3.5+ seconds")
+ *   Level A: < 3.0s ("Under 3.00 seconds")
+ *   Level B: 3.1 ~ 3.3s ("3.1 ~ 3.3 seconds")
+ *   Level C: 3.4 ~ 3.7s ("3.4 ~ 3.7 seconds")
+ *   Level D: 3.8 ~ 4.0s+ ("3.8 ~ 4.0+ seconds")
+ *   SLA: < 6.00s
  *
  * - Date Number (DATE):
- *   Level A: <= 1.3s ("Under 1.30 seconds")
- *   Level B: 1.31s ~ 1.6s ("1.4 ~ 1.6 seconds")
- *   Level C: 1.61s ~ 2.0s ("1.7 ~ 2.0 seconds")
- *   Level D: > 2.0s ("2.1 ~ 2.3+ seconds")
+ *   Level A: < 1.8s ("Under 1.80 seconds")
+ *   Level B: 1.9 ~ 2.2s ("1.9 ~ 2.2 seconds")
+ *   Level C: 2.3 ~ 2.6s ("2.3 ~ 2.6 seconds")
+ *   Level D: 2.7s+ ("2.7+ seconds")
+ *   SLA: < 3.50s
+ *
+ * - Phone Number (Ph):
+ *   Level A: < 2.4s ("Under 2.40 seconds")
+ *   Level B: 2.5 ~ 2.8s ("2.5 ~ 2.8 seconds")
+ *   Level C: 2.9 ~ 3.3s ("2.9 ~ 3.3 seconds")
+ *   Level D: 3.4s+ ("3.4+ seconds")
+ *   SLA: < 4.50s
  */
 export const CATEGORY_SLA_CONFIG: Record<TrainingCategory, CategorySLAMatrix> = {
   tax_number: {
     category: 'tax_number',
     categoryLabel: 'Tax Number (QIN)',
     categoryCode: 'Rg',
+    slaLimit: '6.00s',
+    slaLimitSec: 6.0,
+    slaLimitMs: 6000,
     levels: {
       A: {
         level: 'A',
@@ -91,59 +100,8 @@ export const CATEGORY_SLA_CONFIG: Record<TrainingCategory, CategorySLAMatrix> = 
       D: {
         level: 'D',
         title: 'Level D (Practitioner)',
-        rangeShort: '3.8~4.0s',
+        rangeShort: '3.8~4.0s+',
         rangeDetail: '3.8 ~ 4.0+ seconds',
-        description: 'Practitioner',
-        maxMs: Infinity,
-        badgeClass: 'text-rose-700 bg-rose-50 border-rose-200',
-        colorClass: 'text-rose-600',
-        progressColor: 'bg-rose-500'
-      }
-    }
-  },
-  phone_number: {
-    category: 'phone_number',
-    categoryLabel: 'Phone Number',
-    categoryCode: 'Ph',
-    levels: {
-      A: {
-        level: 'A',
-        title: 'Level A (Elite Expert)',
-        rangeShort: '< 2.5s',
-        rangeDetail: 'Under 2.50 seconds',
-        description: 'Elite Expert',
-        maxMs: 2500,
-        badgeClass: 'text-emerald-700 bg-emerald-50 border-emerald-200',
-        colorClass: 'text-emerald-600',
-        progressColor: 'bg-emerald-500'
-      },
-      B: {
-        level: 'B',
-        title: 'Level B (Specialist)',
-        rangeShort: '2.6~2.8s',
-        rangeDetail: '2.6 ~ 2.8 seconds',
-        description: 'Proficient Specialist',
-        maxMs: 2800,
-        badgeClass: 'text-indigo-700 bg-indigo-50 border-indigo-200',
-        colorClass: 'text-indigo-600',
-        progressColor: 'bg-indigo-500'
-      },
-      C: {
-        level: 'C',
-        title: 'Level C (Qualified)',
-        rangeShort: '2.9~3.2s',
-        rangeDetail: '2.9 ~ 3.2 seconds',
-        description: 'Qualified Operator',
-        maxMs: 3200,
-        badgeClass: 'text-amber-700 bg-amber-50 border-amber-200',
-        colorClass: 'text-amber-600',
-        progressColor: 'bg-amber-500'
-      },
-      D: {
-        level: 'D',
-        title: 'Level D (Practitioner)',
-        rangeShort: '3.3~3.5s',
-        rangeDetail: '3.3 ~ 3.5+ seconds',
         description: 'Practitioner',
         maxMs: Infinity,
         badgeClass: 'text-rose-700 bg-rose-50 border-rose-200',
@@ -156,14 +114,17 @@ export const CATEGORY_SLA_CONFIG: Record<TrainingCategory, CategorySLAMatrix> = 
     category: 'date_number',
     categoryLabel: 'Date Number',
     categoryCode: 'DATE',
+    slaLimit: '3.50s',
+    slaLimitSec: 3.5,
+    slaLimitMs: 3500,
     levels: {
       A: {
         level: 'A',
         title: 'Level A (Elite Expert)',
-        rangeShort: '< 1.3s',
-        rangeDetail: 'Under 1.30 seconds',
+        rangeShort: '< 1.8s',
+        rangeDetail: 'Under 1.80 seconds',
         description: 'Elite Expert',
-        maxMs: 1300,
+        maxMs: 1800,
         badgeClass: 'text-emerald-700 bg-emerald-50 border-emerald-200',
         colorClass: 'text-emerald-600',
         progressColor: 'bg-emerald-500'
@@ -171,10 +132,10 @@ export const CATEGORY_SLA_CONFIG: Record<TrainingCategory, CategorySLAMatrix> = 
       B: {
         level: 'B',
         title: 'Level B (Specialist)',
-        rangeShort: '1.4~1.6s',
-        rangeDetail: '1.4 ~ 1.6 seconds',
+        rangeShort: '1.9~2.2s',
+        rangeDetail: '1.9 ~ 2.2 seconds',
         description: 'Proficient Specialist',
-        maxMs: 1600,
+        maxMs: 2200,
         badgeClass: 'text-indigo-700 bg-indigo-50 border-indigo-200',
         colorClass: 'text-indigo-600',
         progressColor: 'bg-indigo-500'
@@ -182,10 +143,10 @@ export const CATEGORY_SLA_CONFIG: Record<TrainingCategory, CategorySLAMatrix> = 
       C: {
         level: 'C',
         title: 'Level C (Qualified)',
-        rangeShort: '1.7~2.0s',
-        rangeDetail: '1.7 ~ 2.0 seconds',
+        rangeShort: '2.3~2.6s',
+        rangeDetail: '2.3 ~ 2.6 seconds',
         description: 'Qualified Operator',
-        maxMs: 2000,
+        maxMs: 2600,
         badgeClass: 'text-amber-700 bg-amber-50 border-amber-200',
         colorClass: 'text-amber-600',
         progressColor: 'bg-amber-500'
@@ -193,8 +154,62 @@ export const CATEGORY_SLA_CONFIG: Record<TrainingCategory, CategorySLAMatrix> = 
       D: {
         level: 'D',
         title: 'Level D (Practitioner)',
-        rangeShort: '2.1~2.3s',
-        rangeDetail: '2.1 ~ 2.3+ seconds',
+        rangeShort: '2.7s+',
+        rangeDetail: '2.7+ seconds',
+        description: 'Practitioner',
+        maxMs: Infinity,
+        badgeClass: 'text-rose-700 bg-rose-50 border-rose-200',
+        colorClass: 'text-rose-600',
+        progressColor: 'bg-rose-500'
+      }
+    }
+  },
+  phone_number: {
+    category: 'phone_number',
+    categoryLabel: 'Phone Number',
+    categoryCode: 'Ph',
+    slaLimit: '4.50s',
+    slaLimitSec: 4.5,
+    slaLimitMs: 4500,
+    levels: {
+      A: {
+        level: 'A',
+        title: 'Level A (Elite Expert)',
+        rangeShort: '< 2.4s',
+        rangeDetail: 'Under 2.40 seconds',
+        description: 'Elite Expert',
+        maxMs: 2400,
+        badgeClass: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+        colorClass: 'text-emerald-600',
+        progressColor: 'bg-emerald-500'
+      },
+      B: {
+        level: 'B',
+        title: 'Level B (Specialist)',
+        rangeShort: '2.5~2.8s',
+        rangeDetail: '2.5 ~ 2.8 seconds',
+        description: 'Proficient Specialist',
+        maxMs: 2800,
+        badgeClass: 'text-indigo-700 bg-indigo-50 border-indigo-200',
+        colorClass: 'text-indigo-600',
+        progressColor: 'bg-indigo-500'
+      },
+      C: {
+        level: 'C',
+        title: 'Level C (Qualified)',
+        rangeShort: '2.9~3.3s',
+        rangeDetail: '2.9 ~ 3.3 seconds',
+        description: 'Qualified Operator',
+        maxMs: 3300,
+        badgeClass: 'text-amber-700 bg-amber-50 border-amber-200',
+        colorClass: 'text-amber-600',
+        progressColor: 'bg-amber-500'
+      },
+      D: {
+        level: 'D',
+        title: 'Level D (Practitioner)',
+        rangeShort: '3.4s+',
+        rangeDetail: '3.4+ seconds',
         description: 'Practitioner',
         maxMs: Infinity,
         badgeClass: 'text-rose-700 bg-rose-50 border-rose-200',

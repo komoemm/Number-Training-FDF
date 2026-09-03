@@ -1,5 +1,5 @@
 import { TestSession, TypingDetail, TrainingCategory } from '../types';
-import { CATEGORY_SLA_CONFIG } from './speedRanking';
+import { CATEGORY_SLA_CONFIG, normalizeCategory } from './speedRanking';
 
 /**
  * Generates and downloads a self-contained, highly-polished, interactive HTML Performance Certificate & Audit Log.
@@ -12,7 +12,7 @@ import { CATEGORY_SLA_CONFIG } from './speedRanking';
  * @param rankName Formal evaluation rank name text
  */
 export function generateCertificateHTML(session: TestSession, level: string, rankName: string) {
-  const categoryKey: TrainingCategory = session.category || 'tax_number';
+  const categoryKey: TrainingCategory = normalizeCategory(session.category);
   const categoryConfig = CATEGORY_SLA_CONFIG[categoryKey] || CATEGORY_SLA_CONFIG.tax_number;
 
   const traineeName = session.userId.charAt(0).toUpperCase() + session.userId.slice(1);
@@ -158,7 +158,7 @@ export function generateCertificateHTML(session: TestSession, level: string, ran
         </div>
         
         <div class="max-w-xl mx-auto text-xs md:text-sm text-slate-600 mt-6 leading-relaxed">
-          has successfully executed the high-speed Japanese corporate tax invoicing speed test, completing digit transcription 
+          has successfully executed the high-speed Japanese corporate register invoicing speed test, completing digit transcription 
           over standard ledger image assets. The operator recorded verified transcription speed, system latency, and precise 
           record accuracy conforming to performance standards.
         </div>
@@ -256,7 +256,7 @@ export function generateCertificateHTML(session: TestSession, level: string, ran
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
             </svg>
           </span>
-          <input type="text" id="search-input" oninput="searchInvoices()" placeholder="Search Image ID or Tax ID..." class="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-slate-700">
+          <input type="text" id="search-input" oninput="searchInvoices()" placeholder="Search Image ID or Register ID..." class="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-slate-700">
         </div>
       </div>
 
@@ -267,7 +267,7 @@ export function generateCertificateHTML(session: TestSession, level: string, ran
             <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 font-mono-custom tracking-wider">
               <th class="p-3 pl-4">No.</th>
               <th class="p-3">Document Image ID</th>
-              <th class="p-3">Expected Tax ID</th>
+              <th class="p-3">Expected Register ID</th>
               <th class="p-3">Operator Entry</th>
               <th class="p-3">Speed (Seconds)</th>
               <th class="p-3 pr-4 text-right">Status</th>

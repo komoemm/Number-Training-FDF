@@ -1,5 +1,5 @@
 import { TestSession, TypingDetail, TrainingCategory } from '../types';
-import { CATEGORY_SLA_CONFIG } from './speedRanking';
+import { CATEGORY_SLA_CONFIG, normalizeCategory } from './speedRanking';
 
 /**
  * Generates and downloads a highly-professional, styled PDF Performance Certificate & Report 
@@ -13,7 +13,7 @@ import { CATEGORY_SLA_CONFIG } from './speedRanking';
 export async function generateCertificatePDF(session: TestSession, level: string, rankName: string): Promise<void> {
   const { jsPDF } = await import('jspdf');
 
-  const categoryKey: TrainingCategory = session.category || 'tax_number';
+  const categoryKey: TrainingCategory = normalizeCategory(session.category);
   const categoryConfig = CATEGORY_SLA_CONFIG[categoryKey] || CATEGORY_SLA_CONFIG.tax_number;
 
   // Initialize standard A4 Portrait document (210mm x 297mm)
@@ -61,11 +61,11 @@ export async function generateCertificatePDF(session: TestSession, level: string
   doc.setFontSize(9);
   doc.setTextColor(colors.grayText.r, colors.grayText.g, colors.grayText.b);
   
-  const categoryLabel = session.category === 'date_number' 
+  const categoryLabel = categoryKey === 'date_number' 
     ? 'DATE NUMBER' 
-    : session.category === 'phone_number' 
+    : categoryKey === 'phone_number' 
     ? 'PHONE NUMBER' 
-    : 'TAX NUMBER (QIN)';
+    : 'REGISTER NUMBER (QIN)';
 
   const modeText = session.trainingMode === 'hard_180' || session.totalImagesAttempted > 90
     ? `EXTREME ENDURANCE ASSESSMENT [${categoryLabel}] (180 INVOICES)`
@@ -215,7 +215,7 @@ export async function generateCertificatePDF(session: TestSession, level: string
   doc.setTextColor(colors.darkSlate.r, colors.darkSlate.g, colors.darkSlate.b);
   doc.text('No.', 18, tableY + 5);
   doc.text('Document ID', 28, tableY + 5);
-  doc.text('Target Corporate Tax No.', 58, tableY + 5);
+  doc.text('Target Register No.', 58, tableY + 5);
   doc.text('Transcribed User Entry', 105, tableY + 5);
   doc.text('Form Speed', 150, tableY + 5);
   doc.text('Response', 182, tableY + 5);
@@ -342,7 +342,7 @@ export async function generateCertificatePDF(session: TestSession, level: string
     doc.setTextColor(colors.darkSlate.r, colors.darkSlate.g, colors.darkSlate.b);
     doc.text('No.', 18, tblY + 5);
     doc.text('Invoice Document Name', 28, tblY + 5);
-    doc.text('Target (Tax ID Code)', 72, tblY + 5);
+    doc.text('Target (Register Code)', 72, tblY + 5);
     doc.text('Operator Typed Input', 115, tblY + 5);
     doc.text('Response Speed', 155, tblY + 5);
     doc.text('SLA Status', 182, tblY + 5);
@@ -369,7 +369,7 @@ export async function generateCertificatePDF(session: TestSession, level: string
         doc.setTextColor(colors.darkSlate.r, colors.darkSlate.g, colors.darkSlate.b);
         doc.text('No.', 18, tblY + 5);
         doc.text('Invoice Document Name', 28, tblY + 5);
-        doc.text('Target (Tax ID Code)', 72, tblY + 5);
+        doc.text('Target (Register Code)', 72, tblY + 5);
         doc.text('Operator Typed Input', 115, tblY + 5);
         doc.text('Response Speed', 155, tblY + 5);
         doc.text('SLA Status', 182, tblY + 5);

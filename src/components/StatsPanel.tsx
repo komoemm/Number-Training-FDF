@@ -47,7 +47,7 @@ export default function StatsPanel({
     ? '📅 Date Number' 
     : category === 'phone_number' 
     ? '📞 Phone Number' 
-    : '🧾 Tax Number';
+    : '🧾 Register Number';
 
   const catConfig = CATEGORY_SLA_CONFIG[category] || CATEGORY_SLA_CONFIG.tax_number;
   const slaTargetSec = (catConfig.levels.A.maxMs / 1000).toFixed(2) + 's';
@@ -338,14 +338,14 @@ export function SpeedDashboard({
                 onClick={() => setActiveCategoryFilter('tax_number')}
                 role="tab"
                 aria-selected={activeCategoryFilter === 'tax_number'}
-                aria-label="Tax Number (Rg) Category"
+                aria-label="Register Number (Rg) Category"
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold font-sans transition flex items-center gap-1.5 cursor-pointer ${
                   activeCategoryFilter === 'tax_number'
                     ? 'bg-indigo-600 text-white font-extrabold shadow-sm shadow-indigo-600/20'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                 }`}
               >
-                <span>🧾 Tax Number (Rg)</span>
+                <span>🧾 Register Number (Rg)</span>
               </button>
 
               <button

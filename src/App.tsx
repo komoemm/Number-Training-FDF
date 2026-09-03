@@ -16,7 +16,7 @@ import {
 } from './utils/receiptGenerator';
 import { generateCertificatePDF } from './utils/pdfGenerator';
 import { generateCertificateHTML } from './utils/htmlGenerator';
-import { evaluateCategoryLevel, getCategoryRankDetails, CATEGORY_SLA_CONFIG } from './utils/speedRanking';
+import { evaluateCategoryLevel, getCategoryRankDetails, CATEGORY_SLA_CONFIG, normalizeCategory } from './utils/speedRanking';
 import { GeneratedInvoiceData, TypingDetail, TestSession, TrainingMode, TrainingCategory } from './types';
 import InvoiceViewer from './components/InvoiceViewer';
 import StatsPanel from './components/StatsPanel';
@@ -1547,7 +1547,7 @@ export default function App() {
                     onClick={() => handleSelectSetupTab('tax_number')}
                     role="tab"
                     aria-selected={activeSetupTab === 'tax_number'}
-                    aria-label="Tax Number Training"
+                    aria-label="Register Number Training"
                     className={`pb-3 px-1 sm:px-3 text-xs font-bold uppercase tracking-wider border-b-2 cursor-pointer transition flex items-center gap-1.5 shrink-0 ${
                       activeSetupTab === 'tax_number'
                         ? 'border-indigo-600 text-indigo-600 font-extrabold'
@@ -1555,7 +1555,7 @@ export default function App() {
                     }`}
                   >
                     <FileText className="w-3.5 h-3.5" />
-                    <span>🧾 Tax Number</span>
+                    <span>🧾 REGISTER NUMBER</span>
                   </button>
 
                   <button
@@ -1869,7 +1869,7 @@ export default function App() {
                         <div className="text-right">
                           <span className="text-slate-400">Category:</span>{' '}
                           <strong className="text-indigo-600 font-bold uppercase text-[10px]">
-                            {latestSessionByMe.category === 'date_number' ? 'Date' : latestSessionByMe.category === 'phone_number' ? 'Phone' : 'Tax No'}
+                            {normalizeCategory(latestSessionByMe.category) === 'date_number' ? 'Date' : normalizeCategory(latestSessionByMe.category) === 'phone_number' ? 'Phone' : 'Register No'}
                           </strong>
                         </div>
                       </div>
@@ -1897,7 +1897,7 @@ export default function App() {
                     <div className="flex items-center justify-between flex-wrap gap-1.5">
                       <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         <Zap className="w-3.5 h-3.5 text-indigo-600 fill-indigo-600" />
-                        Target Speed Standard
+                        Target Speed Standard ({activeTrainingCategory === 'tax_number' ? 'REGISTER NUMBER' : activeTrainingCategory === 'date_number' ? 'DATE NUMBER' : 'PHONE NUMBER'})
                       </span>
                       <span className="text-[11px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-0.5 rounded-full shrink-0">
                         SLA Standard: &lt; {CATEGORY_SLA_CONFIG[activeTrainingCategory]?.slaLimit || '6.00s'}
@@ -2002,7 +2002,7 @@ export default function App() {
                           Data Entry Port
                         </h3>
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100 uppercase">
-                          {activeTrainingCategory === 'date_number' ? 'Date Entry' : activeTrainingCategory === 'phone_number' ? 'Phone Entry' : 'Tax Code Entry'}
+                          {activeTrainingCategory === 'date_number' ? 'Date Entry' : activeTrainingCategory === 'phone_number' ? 'Phone Entry' : 'Register Code Entry'}
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-1 uppercase font-mono tracking-wider">
@@ -2195,7 +2195,7 @@ export default function App() {
                           Assessment Finalized
                         </h2>
                         <span className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                          {activeTrainingCategory === 'date_number' ? '📅 Date' : activeTrainingCategory === 'phone_number' ? '📞 Phone' : '🧾 Tax No'}
+                          {activeTrainingCategory === 'date_number' ? '📅 Date' : activeTrainingCategory === 'phone_number' ? '📞 Phone' : '🧾 Register No'}
                         </span>
                         {trainingMode === 'hard_180' || expectedDataset.length > 90 ? (
                           <span className="inline-flex items-center gap-1.5 bg-purple-100 text-purple-800 border border-purple-300 text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">
@@ -2288,7 +2288,11 @@ export default function App() {
                         <th className="pb-3 text-left">No.</th>
                         <th className="pb-3">Image ID</th>
                         <th className="pb-3">
-                          Expected ({activeTrainingCategory === 'date_number' ? 'Date YYYYMMDD' : activeTrainingCategory === 'phone_number' ? 'Phone Digits' : 'Tax Code'})
+                          {activeTrainingCategory === 'date_number' 
+                            ? 'EXPECTED (INVOICE DATE CODE)' 
+                            : activeTrainingCategory === 'phone_number' 
+                            ? 'EXPECTED (INVOICE PHONE CODE)' 
+                            : 'EXPECTED (INVOICE REGISTER CODE)'}
                         </th>
                         <th className="pb-3 text-slate-600">Your Typing Entry</th>
                         <th className="pb-3">Lapse Speed</th>
@@ -2341,7 +2345,7 @@ export default function App() {
       {/* Footer System Indicator */}
       <footer className="bg-slate-900 border-t border-slate-950 py-6 text-center text-slate-400 text-xs mt-auto select-none font-sans">
         <p className="font-semibold text-white">Japanese Invoice Speed Assessment Node | Multi-Category Training Hub</p>
-        <p className="mt-1 text-slate-400 text-[11px]">Tax Number • Transaction Date • Contact Phone Number. High precision performance.now() chronometer active.</p>
+        <p className="mt-1 text-slate-400 text-[11px]">Register Number • Transaction Date • Contact Phone Number. High precision performance.now() chronometer active.</p>
       </footer>
 
       {/* Interactive Batch Labeling Assistant Lightbox modal */}
@@ -2411,7 +2415,7 @@ export default function App() {
                         ? 'Review receipt image and verify the 8-digit transaction date (YYYYMMDD).'
                         : modalCategory === 'phone_number'
                         ? 'Review receipt image and verify the contact telephone digits.'
-                        : 'Review receipt image and verify the 13-digit Qualified Tax registration number starting with "T".'}
+                        : 'Review receipt image and verify the 13-digit Qualified Invoice Register registration number starting with "T".'}
                     </p>
                   </div>
 

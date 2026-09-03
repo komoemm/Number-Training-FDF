@@ -74,13 +74,13 @@ export const CategorySandbox: React.FC<CategorySandboxProps> = ({
   // Category Configuration Meta
   const config = {
     tax_number: {
-      title: '🧾 Tax Number Data Entry (登録番号)',
-      subtitle: 'Transcribe 13-digit Japanese Qualified Invoice Tax Registration Numbers (T + 13 digits) from receipt images.',
+      title: '🧾 Register Number Data Entry (登録番号)',
+      subtitle: 'Transcribe 13-digit Japanese Qualified Invoice Registration Numbers (T + 13 digits) from receipt images.',
       inputRule: 'Numbers always begin with "T" followed by 13 digits (e.g. T1234567890123). Hyphens are skipped.',
       autoAdvance: 'Auto-advances immediately upon typing 14 characters (with T) or 13 digits.',
       slaTarget: 'Target speed is under 6.00 seconds per invoice with ≥ 95% accuracy.',
       codePlaceholder: 'T1234567890123',
-      codeLabel: 'Registration Tax Code (T+13 digits)',
+      codeLabel: 'Registration Register Code (T+13 digits)',
       extractHint: 'Filename auto-detects "T" followed by 13 digits (e.g. receipt_T1234567890123.jpg)',
       slaLimit: '6.00s'
     },

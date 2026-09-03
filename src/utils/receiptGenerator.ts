@@ -260,7 +260,7 @@ export function renderReceiptToDataUrl(data: GeneratedInvoiceData): string {
   ctx.fillStyle = '#64748b';
   ctx.font = `10px ${fontName}`;
 
-  let labelText = '登録番号 (Tax Number)';
+  let labelText = '登録番号 (Register Number)';
   let printedNo = data.expectedNumber;
 
   if (category === 'tax_number') {

@@ -10,7 +10,7 @@ import { Clock, RefreshCw, Layers, Database, ChevronDown, ChevronUp, CheckCircle
 import { TestSession, TypingDetail, TrainingCategory } from '../types';
 import { generateCertificatePDF } from '../utils/pdfGenerator';
 import { generateCertificateHTML } from '../utils/htmlGenerator';
-import { evaluateCategoryLevel, getCategoryRankDetails } from '../utils/speedRanking';
+import { evaluateCategoryLevel, getCategoryRankDetails, normalizeCategory } from '../utils/speedRanking';
 import { SpeedDashboard } from './StatsPanel';
 
 interface HistoryLogsProps {
@@ -418,7 +418,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
 
       // 2. Filter by Category
       if (filterCategory !== 'all') {
-        const cat = session.category || 'tax_number';
+        const cat = normalizeCategory(session.category);
         if (cat !== filterCategory) return false;
       }
 
@@ -499,7 +499,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
         ? Math.round((session.correctEntries / session.totalImagesAttempted) * 100) 
         : 100;
         
-      const sessionCat = (session.category as TrainingCategory) || 'tax_number';
+      const sessionCat = normalizeCategory(session.category);
       const lvl = session.level || evaluateCategoryLevel(session.averageTimeMs, sessionCat);
       const totalRuns = sessions.filter(s => s.userId === u).length;
 
@@ -636,7 +636,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                   className="bg-transparent border-none outline-none font-semibold text-slate-700 cursor-pointer text-xs py-0.5 pr-0.5"
                 >
                   <option value="all">All Categories</option>
-                  <option value="tax_number">🧾 Tax Number (QIN)</option>
+                  <option value="tax_number">🧾 Register Number (QIN)</option>
                   <option value="date_number">📅 Date Number</option>
                   <option value="phone_number">📞 Phone Number</option>
                 </select>
@@ -771,7 +771,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                     const accuracy = Math.round((session.correctEntries / session.totalImagesAttempted) * 100);
                     const isExpanded = expandedSessionId === sIdx;
                     const dateLabel = formatDate(session.timestamp);
-                    const sessionCat = (session.category as TrainingCategory) || 'tax_number';
+                    const sessionCat = normalizeCategory(session.category);
                     const lvl = session.level || evaluateCategoryLevel(session.averageTimeMs, sessionCat);
                     const isHardMode = session.trainingMode === 'hard_180' || session.totalImagesAttempted > 90;
                     const isNormalMode = session.trainingMode === 'normal_90' || (session.totalImagesAttempted > 20 && !isHardMode);
@@ -792,7 +792,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                                 </span>
                               )}
                               <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                                {session.category === 'date_number' ? '📅 Date No' : session.category === 'phone_number' ? '📞 Phone No' : '🧾 Tax No'}
+                                {sessionCat === 'date_number' ? '📅 Date No' : sessionCat === 'phone_number' ? '📞 Phone No' : '🧾 Register No'}
                               </span>
                               {isHardMode ? (
                                 <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-[10px] font-bold border border-purple-300 uppercase tracking-wider">

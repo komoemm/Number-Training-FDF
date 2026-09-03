@@ -34,7 +34,7 @@ export interface CategorySLAMatrix {
 
 /**
  * Category-Tailored SLA Matrix
- * - Tax Number (Rg):
+ * - Register Number (Rg):
  *   Level A: < 3.0s ("Under 3.00 seconds")
  *   Level B: 3.1 ~ 3.3s ("3.1 ~ 3.3 seconds")
  *   Level C: 3.4 ~ 3.7s ("3.4 ~ 3.7 seconds")
@@ -58,7 +58,7 @@ export interface CategorySLAMatrix {
 export const CATEGORY_SLA_CONFIG: Record<TrainingCategory, CategorySLAMatrix> = {
   tax_number: {
     category: 'tax_number',
-    categoryLabel: 'Tax Number (QIN)',
+    categoryLabel: 'Register Number (QIN)',
     categoryCode: 'Rg',
     slaLimit: '6.00s',
     slaLimitSec: 6.0,
@@ -221,14 +221,39 @@ export const CATEGORY_SLA_CONFIG: Record<TrainingCategory, CategorySLAMatrix> = 
 };
 
 /**
+ * Normalizes any category string (including legacy variants like 'TAX', 'TAX NUMBER',
+ * 'tax_number', 'register_number', 'Rg', etc.) to a valid TrainingCategory.
+ * Ensures complete backward compatibility with existing training logs and Firestore records.
+ */
+export function normalizeCategory(rawCategory?: string | null): TrainingCategory {
+  if (!rawCategory) return 'tax_number';
+  const str = String(rawCategory).trim().toLowerCase().replace(/[-_\s]+/g, '');
+  if (str.includes('date')) return 'date_number';
+  if (str.includes('phone') || str.includes('tel')) return 'phone_number';
+  // Treats legacy 'tax', 'taxnumber', 'register', 'registernumber', 'qin', 'rg', or unknown as 'tax_number' (Register Number)
+  return 'tax_number';
+}
+
+/**
+ * Returns user-facing canonical display name for any category value.
+ * Treats legacy 'TAX' or 'TAX NUMBER' records as 'Register Number'.
+ */
+export function getCategoryDisplayName(rawCategory?: string | null): string {
+  const norm = normalizeCategory(rawCategory);
+  if (norm === 'date_number') return 'Date Number';
+  if (norm === 'phone_number') return 'Phone Number';
+  return 'Register Number';
+}
+
+/**
  * Resolves the typing assessment grade ('A' | 'B' | 'C' | 'D') dynamically based on
  * the elapsed average time in milliseconds and the category SLA criteria.
  */
 export function evaluateCategoryLevel(
   timeMs: number,
-  category: TrainingCategory = 'tax_number'
+  category: string = 'tax_number'
 ): 'A' | 'B' | 'C' | 'D' {
-  const effectiveCategory: TrainingCategory = CATEGORY_SLA_CONFIG[category] ? category : 'tax_number';
+  const effectiveCategory = normalizeCategory(category);
   const config = CATEGORY_SLA_CONFIG[effectiveCategory];
   
   if (timeMs <= config.levels.A.maxMs) return 'A';
@@ -242,7 +267,7 @@ export function evaluateCategoryLevel(
  */
 export function getCategoryRankDetails(
   timeMs: number,
-  category: TrainingCategory = 'tax_number'
+  category: string = 'tax_number'
 ): {
   level: 'A' | 'B' | 'C' | 'D';
   name: string;
@@ -254,7 +279,7 @@ export function getCategoryRankDetails(
   categoryLabel: string;
   categoryCode: string;
 } {
-  const effectiveCategory: TrainingCategory = CATEGORY_SLA_CONFIG[category] ? category : 'tax_number';
+  const effectiveCategory = normalizeCategory(category);
   const matrix = CATEGORY_SLA_CONFIG[effectiveCategory];
   const level = evaluateCategoryLevel(timeMs, effectiveCategory);
   const levelConfig = matrix.levels[level];
@@ -275,8 +300,8 @@ export function getCategoryRankDetails(
 /**
  * Returns the 4 SLA level configs for a given category (used by Dashboard cards).
  */
-export function getCategorySlaCards(category: TrainingCategory = 'tax_number'): SLALevelConfig[] {
-  const effectiveCategory: TrainingCategory = CATEGORY_SLA_CONFIG[category] ? category : 'tax_number';
+export function getCategorySlaCards(category: string = 'tax_number'): SLALevelConfig[] {
+  const effectiveCategory = normalizeCategory(category);
   const matrix = CATEGORY_SLA_CONFIG[effectiveCategory];
   return [matrix.levels.A, matrix.levels.B, matrix.levels.C, matrix.levels.D];
 }

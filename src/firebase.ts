@@ -5,8 +5,21 @@
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  getFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  memoryLocalCache,
+  setLogLevel,
+  Firestore
+} from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
+
+// Suppress transient backend unreachable probe warnings (e.g., 10-second connection timeout)
+try {
+  setLogLevel('error');
+} catch {}
 
 export enum OperationType {
   CREATE = 'create',
@@ -50,13 +63,29 @@ const isFirebaseActive = Boolean(
 if (isFirebaseActive) {
   try {
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-    db = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined);
+    const databaseId = firebaseConfig.firestoreDatabaseId || undefined;
+
+    // Use initializeFirestore with experimentalForceLongPolling to prevent 10s WebChannel timeout
+    // and configure modern local cache with graceful memory fallback for restricted iframe contexts
+    try {
+      db = initializeFirestore(app, {
+        experimentalForceLongPolling: true,
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager()
+        })
+      }, databaseId);
+    } catch (persistentErr) {
+      try {
+        db = initializeFirestore(app, {
+          experimentalForceLongPolling: true,
+          localCache: memoryLocalCache()
+        }, databaseId);
+      } catch {
+        db = getFirestore(app, databaseId);
+      }
+    }
+
     auth = getAuth(app);
-    
-    // Enable multi-tab or single-tab offline persistence for seamless local operation
-    enableIndexedDbPersistence(db).catch((err) => {
-      console.warn('Firestore offline persistence warning/fallback:', err.code);
-    });
   } catch (error) {
     console.error('Failed to initialize Firebase SDK:', error);
   }

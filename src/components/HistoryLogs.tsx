@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, orderBy, limit, getDocs, doc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, isFirebaseActive, isQuotaError } from '../firebase';
-import { Clock, RefreshCw, Layers, Database, ChevronDown, ChevronUp, CheckCircle, XCircle, Trash2, Filter, Key, ShieldAlert, Trophy, Award, TrendingUp, Download } from 'lucide-react';
+import { Clock, RefreshCw, Layers, Database, ChevronDown, ChevronUp, CheckCircle, XCircle, Trash2, Filter, Key, ShieldAlert, Trophy, Award, TrendingUp, Download, RotateCcw } from 'lucide-react';
 import { TestSession, TypingDetail, TrainingCategory } from '../types';
 import { generateCertificatePDF } from '../utils/pdfGenerator';
 import { generateCertificateHTML } from '../utils/htmlGenerator';
@@ -28,6 +28,7 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
   const [errorStatus, setErrorStatus] = useState<string | null>(null);
   const [filterUser, setFilterUser] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [filterDifficulty, setFilterDifficulty] = useState<'all' | 'easy' | 'normal' | 'hard'>('all');
   const [filterLoginUser, setFilterLoginUser] = useState<string>('all');
 
   // Multi-stage inline deletion confirmation state variables (Iframe-safe)
@@ -396,25 +397,93 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
     return String(dateValue);
   };
 
-  // Get distinct list of usernames in logs to filter of
-  const distinctUsers = Array.from(new Set(sessions.map(s => s.userId))).filter(Boolean);
-  const distinctLoginUsers = Array.from(new Set(loginLogs.map(l => l.username))).filter(Boolean);
+  // Get distinct list of usernames in logs to filter with useMemo
+  const distinctUsers = useMemo(() => {
+    return Array.from(new Set(sessions.map(s => s.userId))).filter(Boolean);
+  }, [sessions]);
 
-  const displayedSessions = (isAdmin
-    ? (filterUser === 'all' ? sessions : sessions.filter(s => s.userId === filterUser))
-    : sessions.filter(s => s.userId === userId)
-  ).filter(s => filterCategory === 'all' ? true : (s.category || 'tax_number') === filterCategory);
+  const distinctLoginUsers = useMemo(() => {
+    return Array.from(new Set(loginLogs.map(l => l.username))).filter(Boolean);
+  }, [loginLogs]);
 
-  const displayedLogins = filterLoginUser === 'all'
-    ? loginLogs
-    : loginLogs.filter(l => l.username === filterLoginUser);
+  // Optimized memoized session filtering
+  const displayedSessions = useMemo(() => {
+    return sessions.filter((session) => {
+      // 1. Filter by Trainee / User
+      if (isAdmin) {
+        if (filterUser !== 'all' && session.userId !== filterUser) return false;
+      } else {
+        if (session.userId !== userId) return false;
+      }
+
+      // 2. Filter by Category
+      if (filterCategory !== 'all') {
+        const cat = session.category || 'tax_number';
+        if (cat !== filterCategory) return false;
+      }
+
+      // 3. Filter by Difficulty mode or totalCount (20, 90, 180)
+      if (filterDifficulty !== 'all') {
+        const diffStr = ((session as any).difficulty || session.trainingMode || '').toString().toLowerCase();
+        const totalCount = (session as any).totalCount ?? session.totalImagesAttempted ?? 0;
+
+        if (filterDifficulty === 'easy') {
+          const isEasy =
+            diffStr.includes('easy') ||
+            diffStr === 'easy_20' ||
+            totalCount === 20 ||
+            (totalCount > 0 && totalCount <= 20);
+          if (!isEasy) return false;
+        } else if (filterDifficulty === 'normal') {
+          const isNormal =
+            diffStr.includes('normal') ||
+            diffStr.includes('medium') ||
+            diffStr === 'normal_90' ||
+            totalCount === 90 ||
+            (totalCount > 20 && totalCount <= 90);
+          if (!isNormal) return false;
+        } else if (filterDifficulty === 'hard') {
+          const isHard =
+            diffStr.includes('hard') ||
+            diffStr === 'hard_180' ||
+            totalCount === 180 ||
+            totalCount > 90;
+          if (!isHard) return false;
+        }
+      }
+
+      return true;
+    });
+  }, [sessions, isAdmin, filterUser, userId, filterCategory, filterDifficulty]);
+
+  // Optimized memoized login logs filtering
+  const displayedLogins = useMemo(() => {
+    if (filterLoginUser === 'all') return loginLogs;
+    return loginLogs.filter((l) => l.username === filterLoginUser);
+  }, [loginLogs, filterLoginUser]);
+
+  // Filter state indicators and reset handler
+  const isTypingFilterActive = filterCategory !== 'all' || filterUser !== 'all' || filterDifficulty !== 'all';
+  const isLoginFilterActive = filterLoginUser !== 'all';
+  const isAnyFilterActive = activeTab === 'typing' ? isTypingFilterActive : activeTab === 'login' ? isLoginFilterActive : false;
+
+  const handleResetFilters = () => {
+    if (activeTab === 'typing') {
+      setFilterCategory('all');
+      setFilterUser('all');
+      setFilterDifficulty('all');
+      setExpandedSessionId(null);
+    } else if (activeTab === 'login') {
+      setFilterLoginUser('all');
+    }
+  };
 
   const getLevelBySpeed = (timeMs: number, category: TrainingCategory = 'tax_number') => {
     return evaluateCategoryLevel(timeMs, category);
   };
 
-  // Compute leaderboard and statistics
-  const computeDashboardStats = () => {
+  // Compute leaderboard and statistics with useMemo
+  const { leaderboard, levelCounts, totalTraineesCount } = useMemo(() => {
     const userBestSessions: { [username: string]: TestSession } = {};
     
     sessions.forEach(session => {
@@ -461,10 +530,9 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
       levelCounts: levelCountsObj,
       totalTraineesCount: leaderboardList.length
     };
-  };
+  }, [sessions]);
 
-  const { leaderboard, levelCounts, totalTraineesCount } = computeDashboardStats();
-  const myDashboardEntry = leaderboard.find(e => e.userId === userId);
+  const myDashboardEntry = useMemo(() => leaderboard.find(e => e.userId === userId), [leaderboard, userId]);
   const myRank = myDashboardEntry ? leaderboard.indexOf(myDashboardEntry) + 1 : null;
 
   return (
@@ -517,62 +585,115 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
         </div>
 
         {/* Global Toolbar */}
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap py-2">
           {activeTab === 'typing' && (
-            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-600 shadow-sm">
-              <Filter className="w-3.5 h-3.5 text-slate-400" />
-              <select
-                value={filterCategory}
-                aria-label="Filter typing test logs by category"
-                onChange={(e) => {
-                  setFilterCategory(e.target.value);
-                  setExpandedSessionId(null);
-                }}
-                className="bg-transparent border-none outline-none font-bold text-slate-700 cursor-pointer text-xs"
+            <>
+              {/* 1. Difficulty filter chips */}
+              <div
+                className="inline-flex items-center gap-1 bg-slate-100/90 p-0.5 rounded-lg border border-slate-200"
+                role="group"
+                aria-label="Filter logs by difficulty mode"
               >
-                <option value="all">All Categories</option>
-                <option value="tax_number">🧾 Tax Number (QIN)</option>
-                <option value="date_number">📅 Date Number</option>
-                <option value="phone_number">📞 Phone Number</option>
-              </select>
-            </div>
-          )}
+                {[
+                  { value: 'all' as const, label: 'All Modes' },
+                  { value: 'easy' as const, label: 'Easy (20)' },
+                  { value: 'normal' as const, label: 'Normal (90)' },
+                  { value: 'hard' as const, label: 'Hard (180)' }
+                ].map((chip) => {
+                  const isSelected = filterDifficulty === chip.value;
+                  return (
+                    <button
+                      key={chip.value}
+                      type="button"
+                      onClick={() => {
+                        setFilterDifficulty(chip.value);
+                        setExpandedSessionId(null);
+                      }}
+                      aria-pressed={isSelected}
+                      aria-label={`Filter by ${chip.label}`}
+                      className={`px-2 py-0.5 rounded-md text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
+                        isSelected
+                          ? 'bg-indigo-600 text-white shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
+                      }`}
+                    >
+                      {chip.label}
+                    </button>
+                  );
+                })}
+              </div>
 
-          {activeTab === 'typing' && isAdmin && distinctUsers.length > 0 && (
-            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-600 shadow-sm">
-              <Filter className="w-3.5 h-3.5 text-slate-400" />
-              <select
-                value={filterUser}
-                aria-label="Filter typing test logs by trainee username"
-                onChange={(e) => {
-                  setFilterUser(e.target.value);
-                  setExpandedSessionId(null);
-                }}
-                className="bg-transparent border-none outline-none font-bold text-slate-700 cursor-pointer text-xs"
-              >
-                <option value="all">All Trainees ({distinctUsers.length})</option>
-                {distinctUsers.map(user => (
-                  <option key={user} value={user}>User: {user}</option>
-                ))}
-              </select>
-            </div>
+              {/* 2. Compact All Categories Dropdown */}
+              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-md px-2 py-0.5 text-xs text-slate-600 shadow-2xs">
+                <Filter className="w-3 h-3 text-slate-400 shrink-0" />
+                <select
+                  value={filterCategory}
+                  aria-label="Filter logs by category"
+                  onChange={(e) => {
+                    setFilterCategory(e.target.value);
+                    setExpandedSessionId(null);
+                  }}
+                  className="bg-transparent border-none outline-none font-semibold text-slate-700 cursor-pointer text-xs py-0.5 pr-0.5"
+                >
+                  <option value="all">All Categories</option>
+                  <option value="tax_number">🧾 Tax Number (QIN)</option>
+                  <option value="date_number">📅 Date Number</option>
+                  <option value="phone_number">📞 Phone Number</option>
+                </select>
+              </div>
+
+              {/* 3. Compact All Trainees Dropdown (Admin Only) */}
+              {isAdmin && distinctUsers.length > 0 && (
+                <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-md px-2 py-0.5 text-xs text-slate-600 shadow-2xs">
+                  <Filter className="w-3 h-3 text-slate-400 shrink-0" />
+                  <select
+                    value={filterUser}
+                    aria-label="Filter logs by trainee"
+                    onChange={(e) => {
+                      setFilterUser(e.target.value);
+                      setExpandedSessionId(null);
+                    }}
+                    className="bg-transparent border-none outline-none font-semibold text-slate-700 cursor-pointer text-xs py-0.5 pr-0.5"
+                  >
+                    <option value="all">All Trainees ({distinctUsers.length})</option>
+                    {distinctUsers.map((user) => (
+                      <option key={user} value={user}>User: {user}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </>
           )}
 
           {activeTab === 'login' && isAdmin && distinctLoginUsers.length > 0 && (
-            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-600 shadow-sm">
-              <Filter className="w-3.5 h-3.5 text-slate-400" />
+            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-md px-2 py-0.5 text-xs text-slate-600 shadow-2xs">
+              <Filter className="w-3 h-3 text-slate-400 shrink-0" />
               <select
                 value={filterLoginUser}
-                aria-label="Filter login history by operator username"
+                aria-label="Filter login history by operator"
                 onChange={(e) => setFilterLoginUser(e.target.value)}
-                className="bg-transparent border-none outline-none font-bold text-slate-700 cursor-pointer text-xs"
+                className="bg-transparent border-none outline-none font-semibold text-slate-700 cursor-pointer text-xs py-0.5 pr-0.5"
               >
                 <option value="all">All Registries ({distinctLoginUsers.length})</option>
-                {distinctLoginUsers.map(user => (
+                {distinctLoginUsers.map((user) => (
                   <option key={user} value={user}>Operator: {user}</option>
                 ))}
               </select>
             </div>
+          )}
+
+          {/* Quick Reset button that appears only when any filter is active */}
+          {isAnyFilterActive && (
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              aria-label="Reset active filters"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition cursor-pointer shadow-2xs"
+              title="Reset all filters to default"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset</span>
+            </button>
           )}
 
           <button
@@ -626,11 +747,23 @@ export default function HistoryLogs({ userId, refreshTrigger, isAdmin = false }:
                 <div className="py-12 flex flex-col items-center justify-center text-slate-400 text-center">
                   <Clock className="w-8 h-8 text-slate-300 mb-2" />
                   <span className="text-sm font-semibold text-slate-600">No Typing Performance Records Match</span>
-                  <span className="text-xs text-slate-500 mt-1">
-                    {filterUser === 'all' 
-                      ? 'Complete a test session worksheet to record your score.' 
-                      : `No performance statistics found for trainee "${filterUser}"`}
+                  <span className="text-xs text-slate-500 mt-1 max-w-sm">
+                    {isTypingFilterActive
+                      ? 'No records match your selected difficulty, category, or trainee filters.'
+                      : filterUser === 'all' 
+                        ? 'Complete a test session worksheet to record your score.' 
+                        : `No performance statistics found for trainee "${filterUser}"`}
                   </span>
+                  {isTypingFilterActive && (
+                    <button
+                      type="button"
+                      onClick={handleResetFilters}
+                      className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition border border-indigo-200 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Reset Filters</span>
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">
